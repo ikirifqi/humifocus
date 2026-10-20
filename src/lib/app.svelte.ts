@@ -7,8 +7,21 @@ import {
 	signOut,
 	type User
 } from 'firebase/auth';
+import {
+	addDoc,
+	arrayUnion,
+	collection,
+	doc,
+	onSnapshot,
+	orderBy,
+	query,
+	setDoc,
+	updateDoc,
+	writeBatch,
+	type WriteBatch
+} from 'firebase/firestore';
 import { MediaQuery } from 'svelte/reactivity';
-import { auth } from '#lib/firebase.js';
+import { auth, db } from '#lib/firebase.js';
 
 export const PALETTE = [
 	'#4f7fd9',
@@ -56,15 +69,19 @@ interface Timer {
 
 type Theme = 'system' | 'light' | 'dark';
 
-interface Saved {
-	theme: Theme;
-	projects: Project[];
-	sessions: Session[];
-	timer: Timer | null;
-	city: string | null;
+/**
+ * Firestore layout, all owned by one user:
+ * - `users/{uid}`: `UserDoc`, settings and the running timer, so every device sees it
+ * - `users/{uid}/projects/{id}`: `Project` fields plus `createdAt`
+ * - `users/{uid}/sessions/{id}`: finished `Session` fields
+ */
+interface UserDoc {
+	city?: string | null;
+	timer?: Timer | null;
 }
 
-const STORAGE_KEY = 'humifocus:v1';
+/** The theme is a per-device preference, kept out of Firestore so it applies before sign-in. */
+const THEME_KEY = 'humifocus:theme';
 
 const DELETED: Project = { id: '', name: 'Deleted project', color: '#999' };
 
@@ -75,28 +92,31 @@ export function totalsByProject(sessions: Session[]) {
 	return totals;
 }
 
-function load(): Partial<Saved> {
-	if (!browser) return {};
-	try {
-		return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}');
-	} catch {
-		return {};
-	}
+function loadTheme(): Theme {
+	const saved = browser ? localStorage.getItem(THEME_KEY) : null;
+	return saved === 'light' || saved === 'dark' ? saved : 'system';
 }
+
+// Writes apply to the local cache at once and reach the server when online, so a rejection
+// means the server refused the write, such as when it breaks the security rules.
+const fail = (err: unknown) => console.error('HumiFocus sync failed:', err);
 
 class App {
 	/** The signed-in Firebase user, or `null` when signed out. */
 	user = $state.raw<User | null>(null);
-	/** False until Firebase has restored the previous session, if there is one. */
+	/** False until the session is restored and, when signed in, the user's data has loaded. */
 	ready = $state(false);
-	theme = $state<Theme>('system');
-	projects = $state<Project[]>([]);
-	sessions = $state<Session[]>([]);
-	timer = $state<Timer | null>(null);
+	theme = $state<Theme>(loadTheme());
+	// The lists and timer mirror Firestore snapshots: they are replaced, never mutated in place.
+	projects = $state.raw<Project[]>([]);
+	sessions = $state.raw<Session[]>([]);
+	timer = $state.raw<Timer | null>(null);
 	/** Prayer timetable city; `null` uses the default. */
 	city = $state<string | null>(null);
 	/** Ticks every 250ms while the timer runs, and every 15s otherwise. */
 	now = $state(Date.now());
+
+	#unlisten: (() => void) | null = null;
 
 	#systemDark = new MediaQuery('(prefers-color-scheme: dark)');
 	dark = $derived(this.theme === 'system' ? this.#systemDark.current : this.theme === 'dark');
@@ -127,12 +147,73 @@ class App {
 			: this.sessions
 	);
 
-	constructor(saved: Partial<Saved>) {
-		this.theme = saved.theme ?? 'system';
-		this.projects = saved.projects ?? [];
-		this.sessions = saved.sessions ?? [];
-		this.timer = saved.timer ?? null;
-		this.city = saved.city ?? null;
+	/** Follow Firebase Auth, loading each signed-in user's data in turn. */
+	connect() {
+		return onAuthStateChanged(auth, (user) => {
+			this.#unlisten?.();
+			this.#unlisten = null;
+			this.user = user;
+			this.projects = [];
+			this.sessions = [];
+			this.timer = null;
+			this.city = null;
+			this.ready = !user;
+			if (user) this.#unlisten = this.#listen(user.uid);
+		});
+	}
+
+	/** Mirror the user's documents into state. Returns a function that stops listening. */
+	#listen(uid: string) {
+		const user = doc(db, 'users', uid);
+		let pending = ['user', 'projects', 'sessions'];
+		const loaded = (key: string) => {
+			pending = pending.filter((k) => k !== key);
+			if (pending.length === 0) this.ready = true;
+		};
+		// A failed listener still counts as loaded, so the app opens instead of staying blank.
+		const failed = (key: string) => (err: unknown) => {
+			fail(err);
+			loaded(key);
+		};
+
+		const unsubscribers = [
+			onSnapshot(
+				user,
+				(snap) => {
+					const data = snap.data() as UserDoc | undefined;
+					this.city = data?.city ?? null;
+					this.timer = data?.timer ?? null;
+					loaded('user');
+				},
+				failed('user')
+			),
+			onSnapshot(
+				query(collection(user, 'projects'), orderBy('createdAt')),
+				(snap) => {
+					this.projects = snap.docs.map((d) => {
+						const { name, color } = d.data();
+						return { id: d.id, name, color };
+					});
+					loaded('projects');
+				},
+				failed('projects')
+			),
+			onSnapshot(
+				query(collection(user, 'sessions'), orderBy('start')),
+				(snap) => {
+					this.sessions = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Session);
+					loaded('sessions');
+				},
+				failed('sessions')
+			)
+		];
+		return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+	}
+
+	/** The signed-in user's document. */
+	#userDoc() {
+		if (!this.user) throw new Error('Not signed in');
+		return doc(db, 'users', this.user.uid);
 	}
 
 	projectOf(id: string) {
@@ -152,6 +233,9 @@ class App {
 	}
 
 	signOut() {
+		// Stop listening first, or the listeners fail with permission errors once signed out.
+		this.#unlisten?.();
+		this.#unlisten = null;
 		return signOut(auth);
 	}
 
@@ -159,86 +243,92 @@ class App {
 		this.theme = this.dark ? 'light' : 'dark';
 	}
 
+	setCity(city: string) {
+		setDoc(this.#userDoc(), { city }, { merge: true }).catch(fail);
+	}
+
 	/** Switch the timer to a project, closing the previous session. */
 	pick(projectId: string) {
 		if (this.timer?.projectId === projectId) return;
 		const now = Date.now();
-		this.#closeSession(now);
+		const batch = writeBatch(db);
+		this.#closeSession(batch, now);
+		const timer: Timer = {
+			projectId,
+			startedAt: now,
+			resumedAt: now,
+			acc: 0,
+			paused: false,
+			notes: []
+		};
+		batch.set(this.#userDoc(), { timer }, { mergeFields: ['timer'] });
+		batch.commit().catch(fail);
 		this.now = now;
-		this.timer = { projectId, startedAt: now, resumedAt: now, acc: 0, paused: false, notes: [] };
 	}
 
 	togglePause() {
 		if (!this.timer) return;
 		const now = Date.now();
-		if (this.timer.paused) {
-			this.timer.paused = false;
-			this.timer.resumedAt = now;
-		} else {
-			this.timer.acc += Math.max(0, now - this.timer.resumedAt);
-			this.timer.paused = true;
-		}
+		const { paused, acc, resumedAt } = this.timer;
+		updateDoc(
+			this.#userDoc(),
+			paused
+				? { 'timer.paused': false, 'timer.resumedAt': now }
+				: { 'timer.paused': true, 'timer.acc': acc + Math.max(0, now - resumedAt) }
+		).catch(fail);
 		this.now = now;
 	}
 
 	addNote(text: string) {
-		this.timer?.notes.push({ at: Date.now(), text });
+		if (!this.timer) return;
+		updateDoc(this.#userDoc(), {
+			'timer.notes': arrayUnion({ at: Date.now(), text })
+		}).catch(fail);
 	}
 
-	saveProject(project: { id: string | null; name: string; color: string }) {
-		if (project.id === null) {
-			this.projects.push({ ...project, id: crypto.randomUUID() });
-			return;
-		}
-		const existing = this.projects.find((p) => p.id === project.id);
-		if (existing) Object.assign(existing, project);
+	saveProject({ id, name, color }: { id: string | null; name: string; color: string }) {
+		const projects = collection(this.#userDoc(), 'projects');
+		const write =
+			id === null
+				? addDoc(projects, { name, color, createdAt: Date.now() })
+				: updateDoc(doc(projects, id), { name, color });
+		write.catch(fail);
 	}
 
 	/** Remove a project. Its logged sessions stay in the history; a running timer is dropped. */
 	deleteProject(id: string) {
-		this.projects = this.projects.filter((p) => p.id !== id);
-		if (this.timer?.projectId === id) this.timer = null;
-	}
-
-	#closeSession(now: number) {
-		if (!this.timer) return;
-		const { acc, paused, resumedAt } = this.timer;
-		const totalMs = acc + (paused ? 0 : Math.max(0, now - resumedAt));
-		if (totalMs >= 1000) {
-			this.sessions.push({
-				id: crypto.randomUUID(),
-				start: this.timer.startedAt,
-				end: now,
-				totalMs,
-				projectId: this.timer.projectId,
-				notes: $state.snapshot(this.timer.notes)
-			});
+		const batch = writeBatch(db);
+		batch.delete(doc(this.#userDoc(), 'projects', id));
+		if (this.timer?.projectId === id) {
+			batch.set(this.#userDoc(), { timer: null }, { mergeFields: ['timer'] });
 		}
-		this.timer = null;
+		batch.commit().catch(fail);
 	}
 
-	toJSON(): Saved {
-		return {
-			theme: this.theme,
-			projects: this.projects,
-			sessions: this.sessions,
-			timer: this.timer,
-			city: this.city
-		};
+	/** Add the running timer, if any, to the history as a finished session. */
+	#closeSession(batch: WriteBatch, now: number) {
+		if (!this.timer) return;
+		const { acc, paused, resumedAt, startedAt, projectId, notes } = this.timer;
+		const totalMs = acc + (paused ? 0 : Math.max(0, now - resumedAt));
+		if (totalMs < 1000) return;
+		batch.set(doc(collection(this.#userDoc(), 'sessions')), {
+			start: startedAt,
+			end: now,
+			totalMs,
+			projectId,
+			notes
+		});
 	}
 }
 
-export const app = new App(load());
+export const app = new App();
 
 if (browser) {
-	onAuthStateChanged(auth, (user) => {
-		app.user = user;
-		app.ready = true;
-	});
+	app.connect();
 
 	$effect.root(() => {
 		$effect(() => {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(app));
+			localStorage.setItem(THEME_KEY, app.theme);
 		});
 	});
 

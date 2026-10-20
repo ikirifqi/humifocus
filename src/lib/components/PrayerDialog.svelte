@@ -37,7 +37,7 @@
 	});
 
 	function pickCity(name: string) {
-		app.city = name;
+		app.setCity(name);
 		cityOpen = false;
 		locating = false;
 		monthOffset = 0;
