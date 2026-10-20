@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// Each user owns everything under users/{uid}; nothing else is readable or writable.
+// Shapes mirror the types in src/lib/app.svelte.ts.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function hasExactly(data, keys) {
+      return data.keys().hasAll(keys) && data.keys().hasOnly(keys);
+    }
+
+    function isTime(value) {
+      return value is int && value >= 0;
+    }
+
+    function isNotes(value) {
+      return value is list && value.size() <= 1000;
+    }
+
+    function isTimer(timer) {
+      return hasExactly(timer, ['projectId', 'startedAt', 'resumedAt', 'acc', 'paused', 'notes'])
+        && timer.projectId is string
+        && isTime(timer.startedAt)
+        && isTime(timer.resumedAt)
+        && isTime(timer.acc)
+        && timer.paused is bool
+        && isNotes(timer.notes);
+    }
+
+    function isUser(data) {
+      return data.keys().hasOnly(['city', 'timer'])
+        && (!('city' in data) || data.city == null || (data.city is string && data.city.size() <= 100))
+        && (!('timer' in data) || data.timer == null || isTimer(data.timer));
+    }
+
+    function isProject(data) {
+      return hasExactly(data, ['name', 'color', 'createdAt'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 200
+        && data.color is string
+        && data.color.matches('^#[0-9a-fA-F]{6}$')
+        && isTime(data.createdAt);
+    }
+
+    function isSession(data) {
+      return hasExactly(data, ['start', 'end', 'totalMs', 'projectId', 'notes'])
+        && isTime(data.start)
+        && isTime(data.end)
+        && data.end >= data.start
+        && isTime(data.totalMs)
+        && data.projectId is string
+        && isNotes(data.notes);
+    }
+
+    // Settings and the running timer.
+    match /users/{uid} {
+      allow read, delete: if isOwner(uid);
+      allow create, update: if isOwner(uid) && isUser(request.resource.data);
+
+      match /projects/{projectId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isProject(request.resource.data);
+      }
+
+      match /sessions/{sessionId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && isSession(request.resource.data);
+      }
+    }
+  }
+}
