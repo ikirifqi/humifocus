@@ -12,13 +12,23 @@ HumiFocus is a simple timer for people who constantly switch context, keeping th
 
 ## Commands
 
-| Command        | Purpose                                  |
-| -------------- | ---------------------------------------- |
-| `pnpm install` | Install dependencies                     |
-| `pnpm dev`     | Start the dev server                     |
-| `pnpm build`   | Build the static SPA into `build/`       |
-| `pnpm preview` | Serve the production build locally       |
-| `pnpm check`   | Type-check Svelte and TypeScript sources |
+| Command        | Purpose                                       |
+| -------------- | --------------------------------------------- |
+| `pnpm install` | Install dependencies                          |
+| `pnpm dev`     | Start the dev server                          |
+| `pnpm build`   | Build the static SPA into `build/`            |
+| `pnpm preview` | Serve the production build locally            |
+| `pnpm check`   | Type-check Svelte and TypeScript sources      |
+| `pnpm lint`    | Check formatting (Prettier) and lint (ESLint) |
+| `pnpm format`  | Format all files with Prettier                |
+
+## Linting and formatting
+
+- Prettier (`prettier.config.js`) owns formatting: tabs, single quotes, no trailing commas, 100-column width.
+- ESLint (`eslint.config.js`) owns code quality, with the recommended JS, typescript-eslint, and eslint-plugin-svelte rules. Formatting rules are disabled in favor of Prettier.
+- Both tools skip anything in `.gitignore`.
+- Before every commit, `pnpm lint`, `pnpm check`, and `pnpm build` must pass.
+- Do not silence a rule with `eslint-disable` or `@ts-ignore` without a comment explaining why.
 
 ## Architecture rules
 
