@@ -1,21 +1,73 @@
 <script lang="ts">
+	import { FirebaseError } from 'firebase/app';
 	import { app } from '#lib/app.svelte.js';
 
+	type Mode = 'sign-in' | 'sign-up' | 'reset';
+
+	const TITLES: Record<Mode, string> = {
+		'sign-in': 'Sign in',
+		'sign-up': 'Create account',
+		reset: 'Reset password'
+	};
+
+	const SUBMIT: Record<Mode, string> = {
+		'sign-in': 'Continue',
+		'sign-up': 'Create account',
+		reset: 'Send reset link'
+	};
+
+	// With email enumeration protection on, Firebase reports a wrong password and an unknown
+	// email alike as `auth/invalid-credential`.
+	const ERRORS: Record<string, string> = {
+		'auth/invalid-credential': 'Incorrect email or password.',
+		'auth/invalid-email': 'Enter a valid email address.',
+		'auth/email-already-in-use': 'An account with this email already exists.',
+		'auth/weak-password': 'Password must be at least 6 characters.',
+		'auth/user-disabled': 'This account has been disabled.',
+		'auth/too-many-requests': 'Too many attempts. Try again in a few minutes.',
+		'auth/network-request-failed': 'Could not reach the server. Check your connection.'
+	};
+
+	let mode = $state<Mode>('sign-in');
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
+	let info = $state('');
+	let busy = $state(false);
 
-	function submit(ev: SubmitEvent) {
+	function switchTo(next: Mode) {
+		mode = next;
+		error = '';
+		info = '';
+	}
+
+	async function submit(ev: SubmitEvent) {
 		ev.preventDefault();
+		error = '';
+		info = '';
 		if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
 			error = 'Enter a valid email address.';
 			return;
 		}
-		if (password.length < 4) {
-			error = 'Password must be at least 4 characters.';
+		if (mode !== 'reset' && password.length < 6) {
+			error = 'Password must be at least 6 characters.';
 			return;
 		}
-		app.signIn(email);
+		busy = true;
+		try {
+			if (mode === 'sign-in') await app.signIn(email, password);
+			else if (mode === 'sign-up') await app.signUp(email, password);
+			else {
+				await app.resetPassword(email);
+				info = 'If an account exists for this email, a reset link is on its way.';
+			}
+		} catch (err) {
+			error =
+				(err instanceof FirebaseError && ERRORS[err.code]) ||
+				'Something went wrong. Please try again.';
+		} finally {
+			busy = false;
+		}
 	}
 </script>
 
@@ -26,7 +78,7 @@
 				<span class="dot"></span>
 				<span>Focus</span>
 			</div>
-			<h1>Sign in</h1>
+			<h1>{TITLES[mode]}</h1>
 		</div>
 		<div class="fields">
 			<label>
@@ -39,21 +91,40 @@
 					autocomplete="username"
 				/>
 			</label>
-			<label>
-				Password
-				<input
-					class="field"
-					type="password"
-					bind:value={password}
-					placeholder="••••••••"
-					autocomplete="current-password"
-				/>
-			</label>
+			{#if mode !== 'reset'}
+				<label>
+					Password
+					<input
+						class="field"
+						type="password"
+						bind:value={password}
+						placeholder="••••••••"
+						autocomplete={mode === 'sign-up' ? 'new-password' : 'current-password'}
+					/>
+				</label>
+			{/if}
 			{#if error}
 				<div class="error" role="alert">{error}</div>
 			{/if}
+			{#if info}
+				<div class="info" role="status">{info}</div>
+			{/if}
 		</div>
-		<button type="submit" class="btn btn-primary">Continue</button>
+		<button type="submit" class="btn btn-primary" disabled={busy}>{SUBMIT[mode]}</button>
+		<div class="links">
+			{#if mode === 'sign-in'}
+				<button type="button" class="link" onclick={() => switchTo('sign-up')}>
+					Create an account
+				</button>
+				<button type="button" class="link" onclick={() => switchTo('reset')}>
+					Forgot password?
+				</button>
+			{:else}
+				<button type="button" class="link" onclick={() => switchTo('sign-in')}>
+					Back to sign in
+				</button>
+			{/if}
+		</div>
 	</form>
 </div>
 
@@ -125,8 +196,38 @@
 		color: var(--danger);
 	}
 
+	.info {
+		font-size: 13px;
+		color: var(--fg2);
+	}
+
 	.btn {
 		min-height: 48px;
 		font-size: 15px;
+	}
+
+	.btn:disabled {
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.links {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		margin-top: -12px;
+	}
+
+	.link {
+		padding: 4px 0;
+		border: none;
+		background: none;
+		color: var(--fg2);
+		font-size: 13px;
+		cursor: pointer;
+	}
+
+	.link:hover {
+		color: var(--accent);
 	}
 </style>

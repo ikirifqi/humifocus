@@ -24,7 +24,9 @@
 	/>
 </svelte:head>
 
-{#if app.user}
+{#if !app.ready}
+	<!-- Render nothing until Firebase restores the session, so the sign-in screen never flashes. -->
+{:else if app.user}
 	{@render children()}
 {:else}
 	<SignIn />

@@ -1,5 +1,14 @@
 import { browser } from '$app/env';
+import {
+	createUserWithEmailAndPassword,
+	onAuthStateChanged,
+	sendPasswordResetEmail,
+	signInWithEmailAndPassword,
+	signOut,
+	type User
+} from 'firebase/auth';
 import { MediaQuery } from 'svelte/reactivity';
+import { auth } from '#lib/firebase.js';
 
 export const PALETTE = [
 	'#4f7fd9',
@@ -48,7 +57,6 @@ interface Timer {
 type Theme = 'system' | 'light' | 'dark';
 
 interface Saved {
-	user: string | null;
 	theme: Theme;
 	projects: Project[];
 	sessions: Session[];
@@ -77,7 +85,10 @@ function load(): Partial<Saved> {
 }
 
 class App {
-	user = $state<string | null>(null);
+	/** The signed-in Firebase user, or `null` when signed out. */
+	user = $state.raw<User | null>(null);
+	/** False until Firebase has restored the previous session, if there is one. */
+	ready = $state(false);
 	theme = $state<Theme>('system');
 	projects = $state<Project[]>([]);
 	sessions = $state<Session[]>([]);
@@ -117,7 +128,6 @@ class App {
 	);
 
 	constructor(saved: Partial<Saved>) {
-		this.user = saved.user ?? null;
 		this.theme = saved.theme ?? 'system';
 		this.projects = saved.projects ?? [];
 		this.sessions = saved.sessions ?? [];
@@ -129,12 +139,20 @@ class App {
 		return this.projects.find((p) => p.id === id) ?? DELETED;
 	}
 
-	signIn(email: string) {
-		this.user = email;
+	async signIn(email: string, password: string) {
+		await signInWithEmailAndPassword(auth, email, password);
+	}
+
+	async signUp(email: string, password: string) {
+		await createUserWithEmailAndPassword(auth, email, password);
+	}
+
+	resetPassword(email: string) {
+		return sendPasswordResetEmail(auth, email);
 	}
 
 	signOut() {
-		this.user = null;
+		return signOut(auth);
 	}
 
 	toggleTheme() {
@@ -201,7 +219,6 @@ class App {
 
 	toJSON(): Saved {
 		return {
-			user: this.user,
 			theme: this.theme,
 			projects: this.projects,
 			sessions: this.sessions,
@@ -214,6 +231,11 @@ class App {
 export const app = new App(load());
 
 if (browser) {
+	onAuthStateChanged(auth, (user) => {
+		app.user = user;
+		app.ready = true;
+	});
+
 	$effect.root(() => {
 		$effect(() => {
 			localStorage.setItem(STORAGE_KEY, JSON.stringify(app));
