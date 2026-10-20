@@ -10,7 +10,10 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			adapter: adapter()
+			// Emit a single-page app: nothing is prerendered, every route is served by the
+			// fallback page. `index.html` is used because both Firebase Hosting (via a
+			// rewrite) and Cloudflare Pages (built-in SPA mode) serve it for unknown paths.
+			adapter: adapter({ fallback: 'index.html' })
 		})
 	]
 });
