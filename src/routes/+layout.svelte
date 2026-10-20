@@ -2,6 +2,7 @@
 	import '../app.css';
 	import favicon from '#lib/assets/favicon.svg';
 	import { app } from '#lib/app.svelte.js';
+	import SignIn from '#lib/components/SignIn.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
@@ -23,4 +24,8 @@
 	/>
 </svelte:head>
 
-{@render children()}
+{#if app.user}
+	{@render children()}
+{:else}
+	<SignIn />
+{/if}
