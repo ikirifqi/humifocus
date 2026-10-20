@@ -309,11 +309,14 @@ class App {
 	#closeSession(batch: WriteBatch, now: number) {
 		if (!this.timer) return;
 		const { acc, paused, resumedAt, startedAt, projectId, notes } = this.timer;
-		const totalMs = acc + (paused ? 0 : Math.max(0, now - resumedAt));
+		// The timer may have started on another device whose clock runs ahead of this one, so
+		// keep the session from ending before it starts, which the security rules reject.
+		const end = Math.max(now, startedAt);
+		const totalMs = Math.min(acc + (paused ? 0 : Math.max(0, now - resumedAt)), end - startedAt);
 		if (totalMs < 1000) return;
 		batch.set(doc(collection(this.#userDoc(), 'sessions')), {
 			start: startedAt,
-			end: now,
+			end,
 			totalMs,
 			projectId,
 			notes
