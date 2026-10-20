@@ -12,13 +12,13 @@ HumiFocus is a simple timer for people who constantly switch context, keeping th
 
 ## Commands
 
-| Command        | Purpose                                     |
-| -------------- | ------------------------------------------- |
-| `pnpm install` | Install dependencies                        |
-| `pnpm dev`     | Start the dev server                        |
-| `pnpm build`   | Build the static SPA into `build/`          |
-| `pnpm preview` | Serve the production build locally          |
-| `pnpm check`   | Type-check Svelte and TypeScript sources    |
+| Command        | Purpose                                  |
+| -------------- | ---------------------------------------- |
+| `pnpm install` | Install dependencies                     |
+| `pnpm dev`     | Start the dev server                     |
+| `pnpm build`   | Build the static SPA into `build/`       |
+| `pnpm preview` | Serve the production build locally       |
+| `pnpm check`   | Type-check Svelte and TypeScript sources |
 
 ## Architecture rules
 
