@@ -2,15 +2,25 @@
 	import { resolve } from '$app/paths';
 	import { app } from '#lib/app.svelte.js';
 	import AddNote from '#lib/components/AddNote.svelte';
+	import PrayerDialog from '#lib/components/PrayerDialog.svelte';
 	import ProjectPicker from '#lib/components/ProjectPicker.svelte';
 	import SessionNotes from '#lib/components/SessionNotes.svelte';
-	import { formatDigits, startOfDay } from '#lib/format.js';
+	import { formatDigits, pad, startOfDay } from '#lib/format.js';
+	import { nextPrayer } from '#lib/prayer.js';
+
+	let prayerOpen = $state(false);
 
 	const today = $derived(app.allSessions.filter((s) => s.start >= startOfDay(app.now)));
 	const projectTotal = $derived(
 		today.filter((s) => s.projectId === app.timer?.projectId).reduce((t, s) => t + s.totalMs, 0)
 	);
 	const allTotal = $derived(today.reduce((t, s) => t + s.totalMs, 0));
+
+	const next = $derived(nextPrayer(app.now, app.city));
+	const nextIn = $derived.by(() => {
+		const m = Math.round(next.inHours * 60);
+		return m >= 60 ? Math.floor(m / 60) + 'h ' + pad(m % 60) + 'm' : m + 'm';
+	});
 </script>
 
 <div class="screen">
@@ -26,6 +36,23 @@
 			>
 		</div>
 		<nav>
+			<button class="prayer" onclick={() => (prayerOpen = true)} title="Monthly prayer timetable">
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.6"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"></path></svg
+				>
+				<span class="prayer-text">
+					<span class="prayer-name">{next.name} <span class="prayer-in">in {nextIn}</span></span>
+					<span class="prayer-at">{next.at} · {next.cityName}</span>
+				</span>
+			</button>
 			<a
 				class="icon-btn"
 				href={resolve('/projects')}
@@ -146,6 +173,8 @@
 	</footer>
 </div>
 
+<PrayerDialog bind:open={prayerOpen} />
+
 <style>
 	.screen {
 		min-height: 100dvh;
@@ -179,6 +208,51 @@
 		align-items: center;
 		flex-wrap: wrap;
 		justify-content: flex-end;
+	}
+
+	.prayer {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 0 14px 0 12px;
+		height: 44px;
+		border-radius: 12px;
+		border: 1px solid var(--line);
+		background: var(--bg2);
+		color: var(--fg);
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.prayer:hover {
+		border-color: var(--fg3);
+	}
+
+	.prayer svg {
+		color: var(--accent);
+		flex-shrink: 0;
+	}
+
+	.prayer-text {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.2;
+	}
+
+	.prayer-name {
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	.prayer-in {
+		font-weight: 400;
+		color: var(--fg2);
+	}
+
+	.prayer-at {
+		font-size: 11px;
+		color: var(--fg3);
+		font-family: var(--mono);
 	}
 
 	main {
