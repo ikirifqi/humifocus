@@ -60,7 +60,13 @@
 				Name
 				<!-- the form opens on an explicit click, so focus belongs in its first field -->
 				<!-- svelte-ignore a11y_autofocus -->
-				<input class="field" bind:value={editing.name} placeholder="Website redesign" autofocus />
+				<input
+					class="field"
+					bind:value={editing.name}
+					placeholder="Website redesign"
+					maxlength="200"
+					autofocus
+				/>
 			</label>
 			<div class="colors">
 				<span class="colors-label">Color</span>
