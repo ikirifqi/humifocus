@@ -17,9 +17,11 @@
 	};
 
 	// With email enumeration protection on, Firebase reports a wrong password and an unknown
-	// email alike as `auth/invalid-credential`.
+	// email alike as `auth/invalid-credential`; without it, they get codes of their own.
 	const ERRORS: Record<string, string> = {
 		'auth/invalid-credential': 'Incorrect email or password.',
+		'auth/wrong-password': 'Incorrect email or password.',
+		'auth/user-not-found': 'Incorrect email or password.',
 		'auth/invalid-email': 'Enter a valid email address.',
 		'auth/email-already-in-use': 'An account with this email already exists.',
 		'auth/weak-password': 'Password must be at least 6 characters.',
