@@ -21,7 +21,7 @@
 		query = '';
 	}
 
-	function pick(id: number) {
+	function pick(id: string) {
 		app.pick(id);
 		open = false;
 		query = '';

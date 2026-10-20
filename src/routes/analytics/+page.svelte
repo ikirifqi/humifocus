@@ -17,17 +17,16 @@
 		app.allSessions.filter((s) => s.start >= dayStart - (range - 1) * DAY)
 	);
 	const inRange = $derived(
-		(filter === 'all'
-			? inRangeAll
-			: inRangeAll.filter((s) => String(s.projectId) === filter)
-		).toSorted((a, b) => b.start - a.start)
+		(filter === 'all' ? inRangeAll : inRangeAll.filter((s) => s.projectId === filter)).toSorted(
+			(a, b) => b.start - a.start
+		)
 	);
 	const total = $derived(inRange.reduce((t, s) => t + s.totalMs, 0));
 	const noteCount = $derived(inRange.reduce((t, s) => t + s.notes.length, 0));
 
 	const perProject = $derived(
 		Object.entries(totalsByProject(inRangeAll))
-			.map(([id, ms]) => ({ id: Number(id), ms, project: app.projectOf(Number(id)) }))
+			.map(([id, ms]) => ({ id, ms, project: app.projectOf(id) }))
 			.toSorted((a, b) => b.ms - a.ms)
 	);
 
@@ -130,7 +129,7 @@
 		>
 			<option value="all">All projects</option>
 			{#each app.projects as p (p.id)}
-				<option value={String(p.id)}>{p.name}</option>
+				<option value={p.id}>{p.name}</option>
 			{/each}
 		</select>
 		<button class="btn btn-ghost export" onclick={exportCsv} disabled={inRange.length === 0}>
@@ -177,7 +176,7 @@
 			{#if perProjectOpen}
 				<div class="per-project">
 					{#each perProject as x (x.id)}
-						<button class="per-row" onclick={() => setFilter(String(x.id))}>
+						<button class="per-row" onclick={() => setFilter(x.id)}>
 							<span class="small-dot" style:background={x.project.color}></span>
 							<span class="per-name">{x.project.name}</span>
 							<span class="per-dur">{formatDuration(x.ms)}</span>

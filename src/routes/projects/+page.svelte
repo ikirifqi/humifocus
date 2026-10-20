@@ -3,8 +3,8 @@
 	import { PALETTE, app, totalsByProject } from '#lib/app.svelte.js';
 	import { formatDuration } from '#lib/format.js';
 
-	let editing = $state<{ id: number | null; name: string; color: string } | null>(null);
-	let deleting = $state<number | null>(null);
+	let editing = $state<{ id: string | null; name: string; color: string } | null>(null);
+	let deleting = $state<string | null>(null);
 
 	const logged = $derived(totalsByProject(app.sessions));
 

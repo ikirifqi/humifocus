@@ -13,7 +13,7 @@ export const PALETTE = [
 ];
 
 export interface Project {
-	id: number;
+	id: string;
 	name: string;
 	color: string;
 }
@@ -28,14 +28,14 @@ export interface Session {
 	start: number;
 	end: number;
 	totalMs: number;
-	projectId: number;
+	projectId: string;
 	notes: Note[];
 	live?: boolean;
 }
 
 /** The session currently being timed. */
 interface Timer {
-	projectId: number;
+	projectId: string;
 	startedAt: number;
 	/** When the timer last started counting, after a pick or a resume. */
 	resumedAt: number;
@@ -51,7 +51,6 @@ interface Saved {
 	user: string | null;
 	theme: Theme;
 	projects: Project[];
-	nextId: number;
 	sessions: Session[];
 	timer: Timer | null;
 	city: string | null;
@@ -59,11 +58,11 @@ interface Saved {
 
 const STORAGE_KEY = 'humifocus:v1';
 
-const DELETED: Project = { id: 0, name: 'Deleted project', color: '#999' };
+const DELETED: Project = { id: '', name: 'Deleted project', color: '#999' };
 
 /** Sum of logged time per project id. */
 export function totalsByProject(sessions: Session[]) {
-	const totals: Record<number, number> = {};
+	const totals: Record<string, number> = {};
 	for (const s of sessions) totals[s.projectId] = (totals[s.projectId] ?? 0) + s.totalMs;
 	return totals;
 }
@@ -81,7 +80,6 @@ class App {
 	user = $state<string | null>(null);
 	theme = $state<Theme>('system');
 	projects = $state<Project[]>([]);
-	nextId = $state(1);
 	sessions = $state<Session[]>([]);
 	timer = $state<Timer | null>(null);
 	/** Prayer timetable city; `null` uses the default. */
@@ -122,13 +120,12 @@ class App {
 		this.user = saved.user ?? null;
 		this.theme = saved.theme ?? 'system';
 		this.projects = saved.projects ?? [];
-		this.nextId = saved.nextId ?? 1;
 		this.sessions = saved.sessions ?? [];
 		this.timer = saved.timer ?? null;
 		this.city = saved.city ?? null;
 	}
 
-	projectOf(id: number) {
+	projectOf(id: string) {
 		return this.projects.find((p) => p.id === id) ?? DELETED;
 	}
 
@@ -145,7 +142,7 @@ class App {
 	}
 
 	/** Switch the timer to a project, closing the previous session. */
-	pick(projectId: number) {
+	pick(projectId: string) {
 		if (this.timer?.projectId === projectId) return;
 		const now = Date.now();
 		this.#closeSession(now);
@@ -170,10 +167,9 @@ class App {
 		this.timer?.notes.push({ at: Date.now(), text });
 	}
 
-	saveProject(project: { id: number | null; name: string; color: string }) {
+	saveProject(project: { id: string | null; name: string; color: string }) {
 		if (project.id === null) {
-			this.projects.push({ ...project, id: this.nextId });
-			this.nextId++;
+			this.projects.push({ ...project, id: crypto.randomUUID() });
 			return;
 		}
 		const existing = this.projects.find((p) => p.id === project.id);
@@ -181,7 +177,7 @@ class App {
 	}
 
 	/** Remove a project. Its logged sessions stay in the history; a running timer is dropped. */
-	deleteProject(id: number) {
+	deleteProject(id: string) {
 		this.projects = this.projects.filter((p) => p.id !== id);
 		if (this.timer?.projectId === id) this.timer = null;
 	}
@@ -208,7 +204,6 @@ class App {
 			user: this.user,
 			theme: this.theme,
 			projects: this.projects,
-			nextId: this.nextId,
 			sessions: this.sessions,
 			timer: this.timer,
 			city: this.city
