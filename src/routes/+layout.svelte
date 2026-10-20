@@ -6,6 +6,7 @@
 </script>
 
 <svelte:head>
+	<title>HumiFocus</title>
 	<link rel="icon" href={favicon} />
 </svelte:head>
 
