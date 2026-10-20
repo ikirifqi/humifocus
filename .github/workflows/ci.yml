@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  # The deploy workflow runs these checks before releasing.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
+jobs:
+  check:
+    name: Lint, type-check, and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm check
+
+      - run: pnpm build
+
+      # Hand the checked build to the deploy workflow, so it ships exactly what passed.
+      - if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: build
+          path: build/
+          if-no-files-found: error
+          retention-days: 7
