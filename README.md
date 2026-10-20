@@ -16,6 +16,26 @@ pnpm install
 pnpm dev
 ```
 
+## Backend
+
+HumiFocus uses [Firebase](https://firebase.google.com) as its backend, configured in `src/lib/firebase.ts` for the `shinobi-rengo` project:
+
+- **Authentication** signs users in with email and password.
+- **Cloud Firestore** stores each user's data under `users/{uid}`: the user document holds settings and the running timer, and the `projects` and `sessions` subcollections hold the rest. A persistent local cache keeps the app usable offline.
+
+Before the app can sign anyone in, in the [Firebase console](https://console.firebase.google.com/project/shinobi-rengo):
+
+1. Enable the **Email/Password** sign-in provider under Authentication.
+2. Create a Cloud Firestore database.
+3. Add the production domain to Authentication's authorized domains (`localhost` is allowed by default).
+
+Then deploy the security rules in `firestore.rules`:
+
+```sh
+pnpm dlx firebase-tools login
+pnpm dlx firebase-tools deploy --only firestore:rules
+```
+
 ## Building
 
 ```sh
