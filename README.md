@@ -6,7 +6,7 @@ Built with [SvelteKit](https://svelte.dev/docs/kit) and compiled to a static sin
 
 ## Requirements
 
-- Node.js 22.17+
+- Node.js 26+ (pinned in `.node-version`)
 - [pnpm](https://pnpm.io)
 
 ## Getting started
