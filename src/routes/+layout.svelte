@@ -1,9 +1,15 @@
 <script lang="ts">
 	import '../app.css';
 	import favicon from '#lib/assets/favicon.svg';
+	import { app } from '#lib/app.svelte.js';
 	import type { LayoutProps } from './$types';
 
 	let { children }: LayoutProps = $props();
+
+	$effect(() => {
+		if (app.theme === 'system') delete document.documentElement.dataset.theme;
+		else document.documentElement.dataset.theme = app.theme;
+	});
 </script>
 
 <svelte:head>
