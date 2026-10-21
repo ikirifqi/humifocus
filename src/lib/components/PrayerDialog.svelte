@@ -15,10 +15,14 @@
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
+	const CITY_MENU_WIDTH = 220;
+
 	let dialog: HTMLDialogElement;
 	let fileInput: HTMLInputElement;
+	let cityBtn: HTMLButtonElement;
 	let monthOffset = $state(0);
 	let cityOpen = $state(false);
+	let cityMenu = $state({ top: 0, left: 0, maxHeight: 0 });
 	let locating = $state(false);
 	let uploadError = $state('');
 
@@ -48,6 +52,22 @@
 			dialog.close();
 		}
 	});
+
+	/**
+	 * The city menu is fixed to the viewport, so the dialog's edges never crop it on a small
+	 * screen. Place it under its button, kept on screen.
+	 */
+	function toggleCity() {
+		cityOpen = !cityOpen;
+		if (!cityOpen) return;
+		const rect = cityBtn.getBoundingClientRect();
+		const top = rect.bottom + 6;
+		cityMenu = {
+			top,
+			left: Math.max(8, Math.min(rect.right - CITY_MENU_WIDTH, innerWidth - CITY_MENU_WIDTH - 8)),
+			maxHeight: innerHeight - top - 8
+		};
+	}
 
 	function pickCity(name: string) {
 		app.setCity(name);
@@ -90,6 +110,9 @@
 		new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 </script>
 
+<!-- The city menu is placed for the window it opened in. -->
+<svelte:window onresize={() => (cityOpen = false)} />
+
 <dialog
 	bind:this={dialog}
 	onclose={() => (open = false)}
@@ -110,8 +133,9 @@
 			<div class="controls">
 				<div class="city" {@attach clickOutside(() => (cityOpen = false))}>
 					<button
+						bind:this={cityBtn}
 						class="ctl city-btn"
-						onclick={() => (cityOpen = !cityOpen)}
+						onclick={toggleCity}
 						title="Change location"
 						aria-expanded={cityOpen}
 					>
@@ -132,7 +156,13 @@
 						>{place.name}
 					</button>
 					{#if cityOpen}
-						<div class="popover city-menu">
+						<div
+							class="popover city-menu"
+							style:top="{cityMenu.top}px"
+							style:left="{cityMenu.left}px"
+							style:width="{CITY_MENU_WIDTH}px"
+							style:max-height="{cityMenu.maxHeight}px"
+						>
 							<button class="city-item locate" onclick={locate}>
 								<svg
 									width="15"
@@ -373,10 +403,9 @@
 	}
 
 	.city-menu {
-		position: absolute;
-		top: calc(100% + 6px);
-		right: 0;
-		width: 220px;
+		position: fixed;
+		overflow-y: auto;
+		overscroll-behavior: contain;
 		padding: 6px;
 		border-radius: 12px;
 		box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.3);
@@ -400,6 +429,7 @@
 		cursor: pointer;
 		text-align: left;
 		width: 100%;
+		flex-shrink: 0;
 	}
 
 	.city-item:hover,
@@ -425,6 +455,7 @@
 	}
 
 	.sep {
+		flex-shrink: 0;
 		height: 1px;
 		background: var(--line);
 		margin: 4px 6px;
