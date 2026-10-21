@@ -17,14 +17,9 @@ jobs:
   check:
     name: Lint, type-check, and build
     runs-on: ubuntu-latest
-    # Firebase web config, compiled into the build. See `.env.example`.
+    # Firebase web config as JSON, compiled into the build. See `.env.example`.
     env:
-      PUBLIC_FIREBASE_API_KEY: ${{ vars.PUBLIC_FIREBASE_API_KEY }}
-      PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.PUBLIC_FIREBASE_AUTH_DOMAIN }}
-      PUBLIC_FIREBASE_PROJECT_ID: ${{ vars.PUBLIC_FIREBASE_PROJECT_ID }}
-      PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ vars.PUBLIC_FIREBASE_STORAGE_BUCKET }}
-      PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ vars.PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-      PUBLIC_FIREBASE_APP_ID: ${{ vars.PUBLIC_FIREBASE_APP_ID }}
+      PUBLIC_FIREBASE_CONFIG: ${{ vars.PUBLIC_FIREBASE_CONFIG }}
     steps:
       - uses: actions/checkout@v7
 
@@ -45,9 +40,8 @@ jobs:
       - if: github.event_name == 'workflow_dispatch'
         name: Require Firebase config
         run: |
-          missing=$(env | grep '^PUBLIC_FIREBASE_.*=$' | cut -d= -f1 || true)
-          if [ -n "$missing" ]; then
-            echo "::error::Set these repository variables before releasing: $(echo $missing)"
+          if [ -z "$PUBLIC_FIREBASE_CONFIG" ]; then
+            echo "::error::Set the PUBLIC_FIREBASE_CONFIG repository variable before releasing."
             exit 1
           fi
 
