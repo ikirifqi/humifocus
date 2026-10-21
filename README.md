@@ -42,17 +42,17 @@ A simple focus timer for people who constantly switch context. Pick what you are
 
 You need [Node.js](https://nodejs.org) 26 or later (pinned in `.node-version`) and [pnpm](https://pnpm.io).
 
+HumiFocus needs a Firebase project to run. The repository holds no Firebase config, so before the first run, [set up your own Firebase project](#set-up-firebase) and put its config in `.env`.
+
 ```sh
 git clone https://github.com/ikirifqi/humifocus.git
 cd humifocus
 pnpm install
+cp .env.example .env    # then fill in your Firebase web app config
 pnpm dev
 ```
 
 The app opens at <http://localhost:5173>. Create an account on the sign-in screen to start.
-
-> [!NOTE]
-> Out of the box the app talks to the project's own Firebase backend. To develop against your own data, [use your own Firebase project](#use-your-own-firebase-project).
 
 ### Scripts
 
@@ -113,13 +113,27 @@ To skip the key prompt, set `API_CO_ID_KEY` for that one command, such as from a
 API_CO_ID_KEY="$(cat path/to/api-key)" pnpm timetable --regency 3204
 ```
 
-## Use your own Firebase project
+## Set up Firebase
+
+Whether you run HumiFocus locally or deploy a fork, it needs a Firebase project of your own.
 
 1. Create a project in the [Firebase console](https://console.firebase.google.com) and add a web app to it.
 2. Under **Authentication**, enable the **Email/Password** sign-in provider.
 3. Create a **Cloud Firestore** database.
-4. Replace the config in `src/lib/firebase.ts` with your web app's config, and the project ID in `.firebaserc` with yours.
-5. Deploy the security rules:
+4. Copy `.env.example` to `.env` and fill in the web app's config from **Project settings > Your apps**:
+
+   | Variable                              | Firebase config field |
+   | ------------------------------------- | --------------------- |
+   | `PUBLIC_FIREBASE_API_KEY`             | `apiKey`              |
+   | `PUBLIC_FIREBASE_AUTH_DOMAIN`         | `authDomain`          |
+   | `PUBLIC_FIREBASE_PROJECT_ID`          | `projectId`           |
+   | `PUBLIC_FIREBASE_STORAGE_BUCKET`      | `storageBucket`       |
+   | `PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId`   |
+   | `PUBLIC_FIREBASE_APP_ID`              | `appId`               |
+
+   These values are compiled into the app and visible to anyone who loads it. They are not secrets: the security rules in `firestore.rules` are what protect the data.
+
+5. Copy `.firebaserc.example` to `.firebaserc` and put your project ID in it, then deploy the security rules:
 
    ```sh
    pnpm dlx firebase-tools login
@@ -127,6 +141,8 @@ API_CO_ID_KEY="$(cat path/to/api-key)" pnpm timetable --regency 3204
    ```
 
 6. When you deploy the app, add its domain to **Authentication > Settings > Authorized domains**. `localhost` is allowed by default.
+
+`.env` and `.firebaserc` are ignored by git, so your config stays out of the repository.
 
 ## Deployment
 
@@ -137,7 +153,9 @@ This repository deploys to [Cloudflare Pages](https://pages.cloudflare.com) with
 - **CI** (`.github/workflows/ci.yml`) lints, type-checks, and builds every push and pull request.
 - **Deploy** (`.github/workflows/deploy.yml`) runs by hand from the **Actions** tab on `main`. Enter a version such as `1.2.0` and it runs the checks, deploys the build to Cloudflare Pages, tags the commit `v1.2.0`, and publishes a GitHub release with the build attached. Versions with a suffix, such as `1.3.0-beta.1`, become prereleases.
 
-To deploy a fork, add these repository secrets under **Settings > Secrets and variables > Actions**:
+To deploy a fork, first [set up Firebase](#set-up-firebase). Then, under **Settings > Secrets and variables > Actions**, add each variable from `.env.example` with your Firebase values on the **Variables** tab. CI builds with them, and a release stops if any is missing. They are variables, not secrets, because they end up in the public build anyway.
+
+Add these repository secrets on the **Secrets** tab:
 
 | Secret                  | Value                                                                            |
 | ----------------------- | -------------------------------------------------------------------------------- |
