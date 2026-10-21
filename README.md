@@ -120,16 +120,13 @@ Whether you run HumiFocus locally or deploy a fork, it needs a Firebase project 
 1. Create a project in the [Firebase console](https://console.firebase.google.com) and add a web app to it.
 2. Under **Authentication**, enable the **Email/Password** sign-in provider. HumiFocus is invite-only: the app has no sign-up or password reset, so also turn off **Settings > User actions > Enable create (sign-up)**, or anyone can still create an account through the Firebase API. Add each user, yourself included, under **Users > Add user**.
 3. Create a **Cloud Firestore** database.
-4. Copy `.env.example` to `.env` and fill in the web app's config from **Project settings > Your apps**:
+4. Copy `.env.example` to `.env` and set `PUBLIC_FIREBASE_CONFIG` to the web app's config from **Project settings > Your apps**, written as JSON on one line inside single quotes:
 
-   | Variable                              | Firebase config field |
-   | ------------------------------------- | --------------------- |
-   | `PUBLIC_FIREBASE_API_KEY`             | `apiKey`              |
-   | `PUBLIC_FIREBASE_AUTH_DOMAIN`         | `authDomain`          |
-   | `PUBLIC_FIREBASE_PROJECT_ID`          | `projectId`           |
-   | `PUBLIC_FIREBASE_STORAGE_BUCKET`      | `storageBucket`       |
-   | `PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId`   |
-   | `PUBLIC_FIREBASE_APP_ID`              | `appId`               |
+   ```sh
+   PUBLIC_FIREBASE_CONFIG='{"apiKey": "...", "authDomain": "...", "projectId": "...", "storageBucket": "...", "messagingSenderId": "...", "appId": "..."}'
+   ```
+
+   The console shows the config as a JavaScript object, so put the keys in double quotes. The build stops with an error if the JSON is invalid or lacks `apiKey`, `authDomain`, `projectId`, or `appId`.
 
    These values are compiled into the app and visible to anyone who loads it. They are not secrets: the security rules in `firestore.rules` are what protect the data.
 
@@ -153,7 +150,7 @@ This repository deploys to [Cloudflare Pages](https://pages.cloudflare.com) with
 - **CI** (`.github/workflows/ci.yml`) lints, type-checks, and builds every push and pull request.
 - **Deploy** (`.github/workflows/deploy.yml`) runs by hand from the **Actions** tab on `main`. Enter a version such as `1.2.0` and it runs the checks, deploys the build to Cloudflare Pages, tags the commit `v1.2.0`, and publishes a GitHub release with the build attached. Versions with a suffix, such as `1.3.0-beta.1`, become prereleases.
 
-To deploy a fork, first [set up Firebase](#set-up-firebase). Then, under **Settings > Secrets and variables > Actions**, add each variable from `.env.example` with your Firebase values on the **Variables** tab. CI builds with them, and a release stops if any is missing. They are variables, not secrets, because they end up in the public build anyway.
+To deploy a fork, first [set up Firebase](#set-up-firebase). Then, under **Settings > Secrets and variables > Actions**, add a `PUBLIC_FIREBASE_CONFIG` variable on the **Variables** tab holding the same JSON, which may span several lines there. CI builds with it, and a release stops if it is missing. It is a variable, not a secret, because it ends up in the public build anyway.
 
 Add these repository secrets on the **Secrets** tab:
 
