@@ -24,6 +24,14 @@ export const CITIES: Record<string, City> = {
 
 export const DEFAULT_CITY = 'Jakarta';
 
+/**
+ * Identifies a city regardless of case and punctuation. It keys the city's uploaded timetables
+ * in Firestore, and `firestore.rules` derives the same slug.
+ */
+export function citySlug(city: string) {
+	return city.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
 export const PRAYERS = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const;
 export type Prayer = (typeof PRAYERS)[number];
 export type PrayerTimes = Record<Prayer, number>;
