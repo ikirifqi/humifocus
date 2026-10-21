@@ -18,6 +18,9 @@ Thumbs.db
 !.env.example
 !.env.test
 
+# Firebase CLI project, copied from .firebaserc.example
+.firebaserc
+
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
