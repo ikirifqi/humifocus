@@ -52,7 +52,7 @@ cp .env.example .env    # then fill in your Firebase web app config
 pnpm dev
 ```
 
-The app opens at <http://localhost:5173>. Create an account on the sign-in screen to start.
+The app opens at <http://localhost:5173>. Sign in with an account you added in the Firebase console.
 
 ### Scripts
 
@@ -118,7 +118,7 @@ API_CO_ID_KEY="$(cat path/to/api-key)" pnpm timetable --regency 3204
 Whether you run HumiFocus locally or deploy a fork, it needs a Firebase project of your own.
 
 1. Create a project in the [Firebase console](https://console.firebase.google.com) and add a web app to it.
-2. Under **Authentication**, enable the **Email/Password** sign-in provider.
+2. Under **Authentication**, enable the **Email/Password** sign-in provider. HumiFocus is invite-only: the app has no sign-up or password reset, so also turn off **Settings > User actions > Enable create (sign-up)**, or anyone can still create an account through the Firebase API. Add each user, yourself included, under **Users > Add user**.
 3. Create a **Cloud Firestore** database.
 4. Copy `.env.example` to `.env` and fill in the web app's config from **Project settings > Your apps**:
 
