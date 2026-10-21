@@ -17,7 +17,7 @@ A simple focus timer for people who constantly switch context. Pick what you are
 - **Session notes.** Jot down what you did or where you left off, attached to the running session.
 - **Projects** with colors and the time logged on each.
 - **Analytics** over 7, 30, or 90 days: total focus, daily average, time per project, a day-by-day history with notes, and CSV export.
-- **Prayer timetable** for the next prayer and the whole month, with regional calculation methods for Jakarta, Kuala Lumpur, Dubai, Cairo, Istanbul, London, and New York.
+- **Prayer timetable** for the next prayer and the whole month, with regional calculation methods for Jakarta, Kuala Lumpur, Dubai, Cairo, Istanbul, London, and New York. Upload a year of official times for any city as CSV, and every user can pick it.
 - **Synced and offline-ready.** Your data follows your account across devices, and keeps working without a connection.
 - **Light and dark themes.**
 
@@ -56,18 +56,19 @@ The app opens at <http://localhost:5173>. Create an account on the sign-in scree
 
 ### Scripts
 
-| Command        | Purpose                                       |
-| -------------- | --------------------------------------------- |
-| `pnpm dev`     | Start the dev server                          |
-| `pnpm build`   | Build the static SPA into `build/`            |
-| `pnpm preview` | Serve the production build locally            |
-| `pnpm check`   | Type-check Svelte and TypeScript sources      |
-| `pnpm lint`    | Check formatting (Prettier) and lint (ESLint) |
-| `pnpm format`  | Format all files with Prettier                |
+| Command          | Purpose                                       |
+| ---------------- | --------------------------------------------- |
+| `pnpm dev`       | Start the dev server                          |
+| `pnpm build`     | Build the static SPA into `build/`            |
+| `pnpm preview`   | Serve the production build locally            |
+| `pnpm check`     | Type-check Svelte and TypeScript sources      |
+| `pnpm lint`      | Check formatting (Prettier) and lint (ESLint) |
+| `pnpm format`    | Format all files with Prettier                |
+| `pnpm timetable` | Write a prayer timetable CSV from api.co.id   |
 
 ## How it works
 
-HumiFocus has no server of its own. The browser talks to Firebase directly, and `firestore.rules` makes sure each signed-in user can only read and write their own data.
+HumiFocus has no server of its own. The browser talks to Firebase directly, and `firestore.rules` makes sure each signed-in user can only read and write their own data, apart from the shared prayer timetables.
 
 Each user's data lives under `users/{uid}` in Firestore:
 
@@ -77,7 +78,40 @@ Each user's data lives under `users/{uid}` in Firestore:
 | `users/{uid}/projects/{id}` | Project name, color, and creation time                                                |
 | `users/{uid}/sessions/{id}` | Finished sessions: project, start and end, time counted, and notes                    |
 
+Uploaded prayer timetables are shared by every signed-in user. Each signed-in app downloads only the timetables of the city it shows:
+
+| Path                             | Holds                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `prayerTimetables/{city}_{year}` | A year of prayer times for a city, its UTC offset, and who uploaded it and when |
+| `prayerCities/{city}`            | The name of each city with an upload, for the location menu                     |
+
 The app state in `src/lib/app.svelte.ts` mirrors live Firestore snapshots, and Firestore's local cache applies writes immediately, so the app stays responsive offline and catches up when the connection returns.
+
+## Prayer timetable uploads
+
+The timetable dialog's upload button takes a CSV with one row for every day of a year:
+
+```csv
+City,UTC offset,Date,Fajr,Sunrise,Dhuhr,Asr,Maghrib,Isha
+Bandung,7,2026-01-01,04:14,05:35,11:55,15:22,18:10,19:27
+```
+
+The upload replaces any earlier one for the same city and year. If the city is one of the built-in ones, its times replace the calculated ones for that year; otherwise the city is added to the location menu.
+
+For Indonesia, `pnpm timetable` writes this CSV from the [api.co.id](https://api.co.id/api-jadwal-waktu-sholat-imsyak-indonesia/) prayer times (Kemenag). It asks for your API key on each run and never stores it. api.co.id does not accept calls from the browser, which is why this runs locally.
+
+```sh
+pnpm timetable --search bandung        # find the regency code
+pnpm timetable --regency 3204          # writes prayer-timetable-2026-bandung.csv
+```
+
+Add `--year 2027` for another year, `--city Bandung` to rename the city, or `--out file.csv` to choose the file.
+
+To skip the key prompt, set `API_CO_ID_KEY` for that one command, such as from a file so the key stays out of your shell history:
+
+```sh
+API_CO_ID_KEY="$(cat path/to/api-key)" pnpm timetable --regency 3204
+```
 
 ## Use your own Firebase project
 
