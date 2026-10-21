@@ -11,6 +11,13 @@
 		if (app.theme === 'system') delete document.documentElement.dataset.theme;
 		else document.documentElement.dataset.theme = app.theme;
 	});
+
+	// Safari ignores `user-scalable=no` and `touch-action` for pinches, so cancel its gestures.
+	$effect(() => {
+		const cancel = (ev: Event) => ev.preventDefault();
+		document.addEventListener('gesturestart', cancel);
+		return () => document.removeEventListener('gesturestart', cancel);
+	});
 </script>
 
 <svelte:head>
