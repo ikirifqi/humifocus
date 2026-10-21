@@ -1,12 +1,5 @@
 import { browser } from '$app/env';
-import {
-	createUserWithEmailAndPassword,
-	onAuthStateChanged,
-	sendPasswordResetEmail,
-	signInWithEmailAndPassword,
-	signOut,
-	type User
-} from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import {
 	addDoc,
 	arrayUnion,
@@ -285,14 +278,6 @@ class App {
 
 	async signIn(email: string, password: string) {
 		await signInWithEmailAndPassword(auth, email, password);
-	}
-
-	async signUp(email: string, password: string) {
-		await createUserWithEmailAndPassword(auth, email, password);
-	}
-
-	resetPassword(email: string) {
-		return sendPasswordResetEmail(auth, email);
 	}
 
 	signOut() {
