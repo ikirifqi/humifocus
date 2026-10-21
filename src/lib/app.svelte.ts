@@ -120,6 +120,8 @@ class App {
 	projects = $state.raw<Project[]>([]);
 	sessions = $state.raw<Session[]>([]);
 	timer = $state.raw<Timer | null>(null);
+	/** Project chosen while no timer runs, kept on this device until `start`. */
+	selected = $state<string | null>(null);
 	/** Prayer timetable city; `null` uses the default. */
 	city = $state<string | null>(null);
 	/** Uploaded prayer timetables of the prayer timetable city, for every year. */
@@ -134,7 +136,11 @@ class App {
 	#systemDark = new MediaQuery('(prefers-color-scheme: dark)');
 	dark = $derived(this.theme === 'system' ? this.#systemDark.current : this.theme === 'dark');
 
-	current = $derived(this.timer ? this.projectOf(this.timer.projectId) : null);
+	/** The timed project, or else the one chosen to start. */
+	current = $derived.by(() => {
+		const id = this.timer?.projectId ?? this.selected;
+		return id ? this.projectOf(id) : null;
+	});
 
 	elapsed = $derived(
 		this.timer
@@ -169,6 +175,7 @@ class App {
 			this.projects = [];
 			this.sessions = [];
 			this.timer = null;
+			this.selected = null;
 			this.city = null;
 			this.timetables = [];
 			this.timetableCities = [];
@@ -227,6 +234,8 @@ class App {
 					const data = snap.data() as UserDoc | undefined;
 					this.city = data?.city ?? null;
 					this.timer = data?.timer ?? null;
+					// A timer started on any device replaces the choice waiting for `start`.
+					if (this.timer) this.selected = null;
 					listenTimetables(this.city);
 					loaded('user');
 				},
@@ -239,6 +248,8 @@ class App {
 						const { name, color } = d.data();
 						return { id: d.id, name, color };
 					});
+					// Drop the choice waiting for `start` if its project was deleted, on any device.
+					if (!this.projects.some((p) => p.id === this.selected)) this.selected = null;
 					loaded('projects');
 				},
 				failed('projects')
@@ -313,9 +324,20 @@ class App {
 		return batch.commit();
 	}
 
-	/** Switch the timer to a project, closing the previous session. */
+	/** Switch the running timer to a project. With no timer, only choose it for `start`. */
 	pick(projectId: string) {
-		if (this.timer?.projectId === projectId) return;
+		if (!this.timer) this.selected = projectId;
+		else if (this.timer.projectId !== projectId) this.#run(projectId);
+	}
+
+	/** Start the timer on the chosen project. */
+	start() {
+		if (this.timer || !this.selected) return;
+		this.#run(this.selected);
+	}
+
+	/** Time a project from now, closing the previous session. */
+	#run(projectId: string) {
 		const now = Date.now();
 		const batch = writeBatch(db);
 		this.#closeSession(batch, now);

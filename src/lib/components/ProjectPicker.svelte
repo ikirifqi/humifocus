@@ -62,9 +62,9 @@
 				{#each items as p (p.id)}
 					<button
 						class="item"
-						class:selected={p.id === app.timer?.projectId}
+						class:selected={p.id === app.current?.id}
 						role="option"
-						aria-selected={p.id === app.timer?.projectId}
+						aria-selected={p.id === app.current?.id}
 						onclick={() => pick(p.id)}
 					>
 						<span class="dot" style:background={p.color}></span>

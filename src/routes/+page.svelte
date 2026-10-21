@@ -12,7 +12,7 @@
 
 	const today = $derived(app.allSessions.filter((s) => s.start >= startOfDay(app.now)));
 	const projectTotal = $derived(
-		today.filter((s) => s.projectId === app.timer?.projectId).reduce((t, s) => t + s.totalMs, 0)
+		today.filter((s) => s.projectId === app.current?.id).reduce((t, s) => t + s.totalMs, 0)
 	);
 	const allTotal = $derived(today.reduce((t, s) => t + s.totalMs, 0));
 
@@ -153,7 +153,7 @@
 		<ProjectPicker />
 		<div class="digits" class:idle={!app.timer} role="timer">{formatDigits(app.elapsed)}</div>
 		<div class="totals">
-			{#if app.timer}
+			{#if app.current}
 				<div class="total">
 					<span class="eyebrow">{app.current?.name} today</span>
 					<span class="total-digits">{formatDigits(projectTotal)}</span>
@@ -169,12 +169,14 @@
 	<footer>
 		{#if app.timer}
 			<div class="actions">
-				<button class="btn btn-primary pause" onclick={() => app.togglePause()}>
+				<button class="btn btn-primary lead" onclick={() => app.togglePause()}>
 					{app.timer.paused ? 'Resume' : 'Pause'}
 				</button>
 				<AddNote />
 				<SessionNotes />
 			</div>
+		{:else if app.current}
+			<button class="btn btn-primary lead" onclick={() => app.start()}>Start</button>
 		{/if}
 	</footer>
 </div>
@@ -326,7 +328,7 @@
 		gap: 10px;
 	}
 
-	.pause {
+	.lead {
 		padding: 13px 26px;
 		min-height: 48px;
 		min-width: 120px;
