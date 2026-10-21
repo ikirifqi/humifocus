@@ -34,11 +34,12 @@ HumiFocus is a simple timer for people who constantly switch context, keeping th
 
 - The app must stay a static SPA that can be hosted on Firebase Hosting or Cloudflare Pages.
   - `ssr = false` is set in `src/routes/+layout.ts`. Do not re-enable it.
-  - Do not add server-only code: no `+page.server.ts`, `+layout.server.ts`, `+server.ts`, `hooks.server.ts`, or `$env/*/private`.
+  - Do not add server-only code: no `+page.server.ts`, `+layout.server.ts`, `+server.ts`, `hooks.server.ts`, or `$app/env/private`.
   - The adapter fallback is `index.html` (configured in `vite.config.ts`). Keep it unless the hosting target changes.
 - SvelteKit config lives in `vite.config.ts`. There is no `svelte.config.js`.
 - Shared code goes in `src/lib` and is imported through the `#lib` alias.
 - The backend is Firebase Authentication and Cloud Firestore, initialized once in `src/lib/firebase.ts`. Talk to Firebase only from the client SDK; there is no server.
+- Never hardcode the Firebase config. It comes from the `PUBLIC_FIREBASE_*` variables declared in `src/env.ts`, set in `.env` locally (see `.env.example`) and as GitHub repository variables in CI. Add a new variable to all four places: `src/env.ts`, `.env.example`, `.github/workflows/ci.yml`, and the README.
 - App state in `src/lib/app.svelte.ts` mirrors Firestore snapshots. Change data by writing to Firestore, not by mutating state; the local cache feeds the write back through the listeners.
 - `firestore.rules` validates every document shape. When a stored field changes, update the rules in the same commit and deploy them with `pnpm dlx firebase-tools deploy --only firestore:rules`.
 - Prefer the Svelte CLI (`pnpm dlx sv ...`) over hand-writing boilerplate when adding official integrations.
