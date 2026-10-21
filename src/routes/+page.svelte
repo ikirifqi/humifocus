@@ -6,7 +6,7 @@
 	import ProjectPicker from '#lib/components/ProjectPicker.svelte';
 	import SessionNotes from '#lib/components/SessionNotes.svelte';
 	import { formatDigits, pad, startOfDay } from '#lib/format.js';
-	import { nextPrayer } from '#lib/prayer.js';
+	import { findPlace, nextPrayer } from '#lib/prayer.js';
 
 	let prayerOpen = $state(false);
 
@@ -16,9 +16,10 @@
 	);
 	const allTotal = $derived(today.reduce((t, s) => t + s.totalMs, 0));
 
-	const next = $derived(nextPrayer(app.now, app.city));
+	const place = $derived(findPlace(app.city, app.timetables));
+	const next = $derived(nextPrayer(app.now, place));
 	const nextIn = $derived.by(() => {
-		const m = Math.round(next.inHours * 60);
+		const m = Math.round((next?.inHours ?? 0) * 60);
 		return m >= 60 ? Math.floor(m / 60) + 'h ' + pad(m % 60) + 'm' : m + 'm';
 	});
 </script>
@@ -49,8 +50,13 @@
 					><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"></path></svg
 				>
 				<span class="prayer-text">
-					<span class="prayer-name">{next.name} <span class="prayer-in">in {nextIn}</span></span>
-					<span class="prayer-at">{next.at} · {next.cityName}</span>
+					{#if next}
+						<span class="prayer-name">{next.name} <span class="prayer-in">in {nextIn}</span></span>
+						<span class="prayer-at">{next.at} · {place.name}</span>
+					{:else}
+						<span class="prayer-name">Prayer times</span>
+						<span class="prayer-at">No timetable · {place.name}</span>
+					{/if}
 				</span>
 			</button>
 			<a

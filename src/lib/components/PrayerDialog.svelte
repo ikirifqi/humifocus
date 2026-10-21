@@ -2,27 +2,39 @@
 	import { app } from '#lib/app.svelte.js';
 	import { clickOutside } from '#lib/click-outside.js';
 	import { formatHours } from '#lib/format.js';
-	import { CITIES, PRAYERS, nearestCity, nextPrayer, prayerTimes } from '#lib/prayer.js';
+	import {
+		CITIES,
+		PRAYERS,
+		findPlace,
+		nearestCity,
+		nextPrayer,
+		placeNames,
+		placeToday
+	} from '#lib/prayer.js';
+	import { parseTimetableCsv } from '#lib/timetable.js';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
 
 	let dialog: HTMLDialogElement;
+	let fileInput: HTMLInputElement;
 	let monthOffset = $state(0);
 	let cityOpen = $state(false);
 	let locating = $state(false);
+	let uploadError = $state('');
 
-	const next = $derived(nextPrayer(app.now, app.city));
-	const month = $derived(
-		new Date(next.today.getFullYear(), next.today.getMonth() + monthOffset, 1)
-	);
+	const place = $derived(findPlace(app.city, app.timetables));
+	const today = $derived(placeToday(app.now, place).today);
+	const next = $derived(nextPrayer(app.now, place));
+	const month = $derived(new Date(today.getFullYear(), today.getMonth() + monthOffset, 1));
+	const timetable = $derived(place.timetable(month.getFullYear()));
 	const rows = $derived.by(() => {
 		const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
 		return Array.from({ length: days }, (_, i) => {
 			const date = new Date(month.getFullYear(), month.getMonth(), i + 1);
 			return {
 				date,
-				isToday: monthOffset === 0 && i + 1 === next.today.getDate(),
-				times: prayerTimes(date, next.city)
+				isToday: monthOffset === 0 && i + 1 === today.getDate(),
+				times: place.times(date)
 			};
 		});
 	});
@@ -30,6 +42,7 @@
 	$effect(() => {
 		if (open) {
 			monthOffset = 0;
+			uploadError = '';
 			dialog.showModal();
 		} else {
 			dialog.close();
@@ -41,17 +54,40 @@
 		cityOpen = false;
 		locating = false;
 		monthOffset = 0;
+		uploadError = '';
 	}
 
 	function locate() {
-		if (!navigator.geolocation) return pickCity(next.cityName);
+		if (!navigator.geolocation) return pickCity(place.name);
 		locating = true;
 		navigator.geolocation.getCurrentPosition(
 			(p) => pickCity(nearestCity(p.coords.latitude, p.coords.longitude)),
-			() => pickCity(next.cityName),
+			() => pickCity(place.name),
 			{ timeout: 6000 }
 		);
 	}
+
+	async function upload() {
+		const file = fileInput.files?.[0];
+		fileInput.value = '';
+		if (!file) return;
+		try {
+			const timetable = parseTimetableCsv(await file.text());
+			// The upload shows at once from the local cache; the server's answer comes later.
+			const saved = app.uploadTimetable(timetable);
+			pickCity(timetable.city);
+			// Open on the uploaded year: this month, or January of another year.
+			if (timetable.year !== today.getFullYear()) {
+				monthOffset = (timetable.year - today.getFullYear()) * 12 - today.getMonth();
+			}
+			await saved;
+		} catch (err) {
+			uploadError = `Couldn't upload ${file.name}. ${err instanceof Error ? err.message : err}`;
+		}
+	}
+
+	const uploadedOn = (t: number) =>
+		new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 </script>
 
 <dialog
@@ -65,8 +101,10 @@
 			<div class="title">
 				<span id="prayer-title">Prayer timetable</span>
 				<span class="sub"
-					>{next.cityName} · {next.city.method} · UTC{next.city.tz >= 0 ? '+' : ''}{next.city
-						.tz}</span
+					>{place.name} · {timetable ? 'Uploaded timetable' : (place.method ?? 'No timetable')} · UTC{place.tz >=
+					0
+						? '+'
+						: ''}{place.tz}</span
 				>
 			</div>
 			<div class="controls">
@@ -91,7 +129,7 @@
 								cy="10"
 								r="2.2"
 							></circle></svg
-						>{next.cityName}
+						>{place.name}
 					</button>
 					{#if cityOpen}
 						<div class="popover city-menu">
@@ -109,18 +147,38 @@
 								>{locating ? 'Locating…' : 'Use my location'}
 							</button>
 							<div class="sep"></div>
-							{#each Object.entries(CITIES) as [name, c] (name)}
+							{#each placeNames(app.timetableCities) as name (name)}
 								<button
 									class="city-item"
-									class:selected={name === next.cityName}
+									class:selected={name === place.name}
 									onclick={() => pickCity(name)}
 								>
-									<span>{name}</span><span class="method">{c.method}</span>
+									<span>{name}</span><span class="method">{CITIES[name]?.method ?? 'Uploaded'}</span
+									>
 								</button>
 							{/each}
 						</div>
 					{/if}
 				</div>
+				<input bind:this={fileInput} type="file" accept=".csv,text/csv" hidden onchange={upload} />
+				<button
+					class="ctl square"
+					onclick={() => fileInput.click()}
+					title="Upload a year of prayer times as CSV"
+					aria-label="Upload timetable CSV"
+				>
+					<svg
+						width="16"
+						height="16"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						><path d="M12 15V4M7 9l5-5 5 5"></path><path d="M4 19h16"></path></svg
+					>
+				</button>
 				<button class="ctl square" onclick={() => monthOffset--} aria-label="Previous month">
 					<svg
 						width="16"
@@ -161,6 +219,18 @@
 				</button>
 			</div>
 		</div>
+		{#if uploadError}
+			<p class="note error" role="alert">{uploadError}</p>
+		{:else if timetable}
+			<p class="note">
+				Times for {timetable.year} come from a timetable uploaded {uploadedOn(timetable.uploadedAt)}
+				by {timetable.uploadedBy === app.user?.uid ? 'you' : 'another user'}.
+			</p>
+		{:else if !place.method}
+			<p class="note">
+				No timetable uploaded for {place.name} in {month.getFullYear()}. Upload a CSV to fill it in.
+			</p>
+		{/if}
 		<div class="scroll">
 			<table>
 				<thead>
@@ -181,8 +251,8 @@
 								<span class="wd">{r.date.toLocaleDateString(undefined, { weekday: 'short' })}</span>
 							</td>
 							{#each PRAYERS as p (p)}
-								<td class:sunrise={p === 'Sunrise'} class:next={r.isToday && p === next.name}
-									>{formatHours(r.times[p])}</td
+								<td class:sunrise={p === 'Sunrise'} class:next={r.isToday && p === next?.name}
+									>{r.times ? formatHours(r.times[p]) : '–'}</td
 								>
 							{/each}
 						</tr>
@@ -365,6 +435,18 @@
 		font-weight: 500;
 		min-width: 130px;
 		text-align: center;
+	}
+
+	.note {
+		margin: 0;
+		padding: 10px 20px;
+		border-bottom: 1px solid var(--line);
+		font-size: 12px;
+		color: var(--fg2);
+	}
+
+	.note.error {
+		color: var(--danger);
 	}
 
 	.scroll {

@@ -1,4 +1,5 @@
 import { formatHours } from './format';
+import type { Timetable } from './timetable';
 
 export interface City {
 	lat: number;
@@ -95,11 +96,54 @@ export function prayerTimes(date: Date, c: City): PrayerTimes {
 	return out;
 }
 
+/** Somewhere to show prayer times for: a listed city, a city with uploaded timetables, or both. */
+export interface Place {
+	name: string;
+	/** UTC offset in hours. */
+	tz: number;
+	/** Calculation method, or `null` when the times only come from uploaded timetables. */
+	method: string | null;
+	/** The uploaded timetable for a year, if any. */
+	timetable(year: number): Timetable | null;
+	/** Times for a calendar date, or `null` when there are none. */
+	times(date: Date): PrayerTimes | null;
+}
+
+/** Listed cities first, then the other cities with uploaded timetables. */
+export function placeNames(uploaded: string[]) {
+	return [...Object.keys(CITIES), ...uploaded.filter((c) => !CITIES[c]).sort()];
+}
+
+/** The named place, or the default city when there is no such place. Uploads beat calculation. */
+export function findPlace(name: string | null, timetables: Timetable[]): Place {
+	const own = name ? timetables.filter((t) => citySlug(t.city) === citySlug(name)) : [];
+	const city = name ? CITIES[name] : undefined;
+	if (!name || (!city && own.length === 0)) return findPlace(DEFAULT_CITY, timetables);
+
+	const timetable = (year: number) => own.find((t) => t.year === year) ?? null;
+	return {
+		name,
+		tz: city?.tz ?? own.reduce((a, t) => (t.year > a.year ? t : a)).tz,
+		method: city?.method ?? null,
+		timetable,
+		times(date) {
+			const t = timetable(date.getFullYear());
+			if (t) return t.months[date.getMonth()][date.getDate() - 1];
+			return city ? prayerTimes(date, city) : null;
+		}
+	};
+}
+
+/** Today's date in the place, as a local-midnight Date, and the hours since its midnight. */
+export function placeToday(now: number, place: Place) {
+	const local = new Date(now + place.tz * 3600000);
+	return {
+		today: new Date(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()),
+		hours: local.getUTCHours() + local.getUTCMinutes() / 60 + local.getUTCSeconds() / 3600
+	};
+}
+
 export interface NextPrayer {
-	city: City;
-	cityName: string;
-	/** Today's date in the city, as a local-midnight Date. */
-	today: Date;
 	name: Prayer;
 	/** Hours until the next prayer. */
 	inHours: number;
@@ -107,39 +151,21 @@ export interface NextPrayer {
 	at: string;
 }
 
-/** The next obligatory prayer (Sunrise excluded) in the city, relative to `now`. */
-export function nextPrayer(now: number, cityName: string | null): NextPrayer {
-	const name = cityName && CITIES[cityName] ? cityName : DEFAULT_CITY;
-	const city = CITIES[name];
-
-	// "now" in the city's wall-clock time.
-	const local = new Date(now + city.tz * 3600000);
-	const hours = local.getUTCHours() + local.getUTCMinutes() / 60 + local.getUTCSeconds() / 3600;
-	const today = new Date(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate());
-	const times = prayerTimes(today, city);
+/** The next obligatory prayer (Sunrise excluded) in the place, or `null` without its times. */
+export function nextPrayer(now: number, place: Place): NextPrayer | null {
+	const { today, hours } = placeToday(now, place);
+	const times = place.times(today);
+	if (!times) return null;
 
 	const upcoming = PRAYERS.filter((p) => p !== 'Sunrise').find((p) => times[p] > hours);
 	if (upcoming) {
-		return {
-			city,
-			cityName: name,
-			today,
-			name: upcoming,
-			inHours: times[upcoming] - hours,
-			at: formatHours(times[upcoming])
-		};
+		return { name: upcoming, inHours: times[upcoming] - hours, at: formatHours(times[upcoming]) };
 	}
 
 	const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-	const fajr = prayerTimes(tomorrow, city).Fajr;
-	return {
-		city,
-		cityName: name,
-		today,
-		name: 'Fajr',
-		inHours: 24 - hours + fajr,
-		at: formatHours(fajr)
-	};
+	const fajr = place.times(tomorrow)?.Fajr;
+	if (fajr === undefined) return null;
+	return { name: 'Fajr', inHours: 24 - hours + fajr, at: formatHours(fajr) };
 }
 
 /** The listed city closest to a coordinate. */
