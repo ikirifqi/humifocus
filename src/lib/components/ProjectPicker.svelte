@@ -154,7 +154,7 @@
 	}
 
 	.list {
-		max-height: min(320px, 50vh);
+		max-height: min(320px, 40dvh);
 		overflow-y: auto;
 		padding: 0 10px 10px;
 		display: flex;

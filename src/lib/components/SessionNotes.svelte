@@ -53,7 +53,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		width: min(360px, calc(100vw - 32px));
-		max-height: 320px;
+		max-height: min(320px, 60dvh);
 		overflow-y: auto;
 		padding: 14px 16px;
 		border-radius: 14px;

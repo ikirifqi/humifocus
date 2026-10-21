@@ -182,8 +182,10 @@
 <PrayerDialog bind:open={prayerOpen} />
 
 <style>
+	/* The timer fills the screen exactly, like a native app, so the page never scrolls. */
 	.screen {
-		min-height: 100dvh;
+		height: 100dvh;
+		overflow: hidden;
 		display: grid;
 		grid-template-rows: auto 1fr auto;
 		padding: clamp(16px, 3vw, 32px);
@@ -267,6 +269,7 @@
 		align-items: center;
 		justify-content: center;
 		gap: 18px;
+		min-height: 0;
 		padding: 32px 0;
 		text-align: center;
 	}
@@ -274,7 +277,7 @@
 	.digits {
 		font-family: var(--mono);
 		font-weight: 300;
-		font-size: clamp(56px, 16vw, 220px);
+		font-size: clamp(48px, min(16vw, 26dvh), 220px);
 		line-height: 1;
 		letter-spacing: -0.03em;
 		font-variant-numeric: tabular-nums;
@@ -328,5 +331,21 @@
 		min-height: 48px;
 		min-width: 120px;
 		font-size: 15px;
+	}
+
+	/* A phone held sideways: tighten the spacing so everything still fits. */
+	@media (max-height: 520px) {
+		.screen {
+			padding: 12px clamp(16px, 3vw, 32px);
+		}
+
+		main {
+			gap: 10px;
+			padding: 8px 0;
+		}
+
+		footer {
+			min-height: 48px;
+		}
 	}
 </style>

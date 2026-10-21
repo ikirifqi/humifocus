@@ -57,9 +57,13 @@ body {
 	-webkit-font-smoothing: antialiased;
 }
 
-/* Behave like a native app: no pinch or double-tap zoom. */
+/* Behave like a native app: no pinch or double-tap zoom, no rubber-band overscroll, and no
+   text inflation when the phone turns sideways. */
 html {
 	touch-action: pan-x pan-y;
+	overscroll-behavior: none;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 }
 
 a {
