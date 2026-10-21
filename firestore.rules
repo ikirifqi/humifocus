@@ -1,7 +1,9 @@
 rules_version = '2';
 
-// Each user owns everything under users/{uid}; nothing else is readable or writable.
-// Shapes mirror the types in src/lib/app.svelte.ts.
+// Each user owns everything under users/{uid}. Prayer timetables and their city list are shared:
+// every signed-in user can read them and upload or replace one. Nothing else is readable or
+// writable.
+// Shapes mirror the types in src/lib/app.svelte.ts and src/lib/timetable.ts.
 service cloud.firestore {
   match /databases/{database}/documents {
     function isOwner(uid) {
@@ -54,6 +56,73 @@ service cloud.firestore {
         && isTime(data.totalMs)
         && data.projectId is string
         && isNotes(data.notes);
+    }
+
+    function isLeapYear(year) {
+      return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    }
+
+    // One month as encodeMonths writes it: `days` comma-separated days of six HH:MM times.
+    function isTimetableMonth(month, days) {
+      let time = '([01][0-9]|2[0-3]):[0-5][0-9]';
+      let day = time + '( ' + time + '){5}';
+      return month is string
+        && month.matches('^' + day + '(,' + day + ')*$')
+        && month.split(',').size() == days;
+    }
+
+    // The city slugged as citySlug does, which must keep at least one letter or digit.
+    function citySlug(city) {
+      return city.lower().replace('[^a-z0-9]+', '-');
+    }
+
+    function isCityName(name) {
+      return name is string
+        && name.size() > 0
+        && name.size() <= 100
+        && citySlug(name).matches('.*[a-z0-9].*');
+    }
+
+    // The id is the city slug and the year, as timetableId writes it, so each pair has one document.
+    function isTimetable(id, data) {
+      return hasExactly(data, ['city', 'year', 'tz', 'months', 'uploadedBy', 'uploadedAt'])
+        && isCityName(data.city)
+        && data.year is int
+        && data.year >= 2000
+        && data.year <= 2100
+        && id == citySlug(data.city) + '_' + string(data.year)
+        && data.tz is number
+        && data.tz >= -12
+        && data.tz <= 14
+        && data.months is list
+        && data.months.size() == 12
+        && isTimetableMonth(data.months[0], 31)
+        && isTimetableMonth(data.months[1], isLeapYear(data.year) ? 29 : 28)
+        && isTimetableMonth(data.months[2], 31)
+        && isTimetableMonth(data.months[3], 30)
+        && isTimetableMonth(data.months[4], 31)
+        && isTimetableMonth(data.months[5], 30)
+        && isTimetableMonth(data.months[6], 31)
+        && isTimetableMonth(data.months[7], 31)
+        && isTimetableMonth(data.months[8], 30)
+        && isTimetableMonth(data.months[9], 31)
+        && isTimetableMonth(data.months[10], 30)
+        && isTimetableMonth(data.months[11], 31)
+        && data.uploadedBy == request.auth.uid
+        && data.uploadedAt == request.time;
+    }
+
+    match /prayerTimetables/{timetableId} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null && isTimetable(timetableId, request.resource.data);
+    }
+
+    match /prayerCities/{slug} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && hasExactly(request.resource.data, ['name'])
+        && isCityName(request.resource.data.name)
+        && slug == citySlug(request.resource.data.name);
     }
 
     // Settings and the running timer.

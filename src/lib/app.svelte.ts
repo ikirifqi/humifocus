@@ -12,16 +12,27 @@ import {
 	arrayUnion,
 	collection,
 	doc,
+	documentId,
 	onSnapshot,
 	orderBy,
 	query,
+	serverTimestamp,
 	setDoc,
 	updateDoc,
+	where,
 	writeBatch,
 	type WriteBatch
 } from 'firebase/firestore';
 import { MediaQuery } from 'svelte/reactivity';
 import { auth, db } from '#lib/firebase.js';
+import { DEFAULT_CITY, citySlug } from '#lib/prayer.js';
+import {
+	decodeMonths,
+	encodeMonths,
+	timetableId,
+	type ParsedTimetable,
+	type Timetable
+} from '#lib/timetable.js';
 
 export const PALETTE = [
 	'#4f7fd9',
@@ -74,6 +85,11 @@ type Theme = 'system' | 'light' | 'dark';
  * - `users/{uid}`: `UserDoc`, settings and the running timer, so every device sees it
  * - `users/{uid}/projects/{id}`: `Project` fields plus `createdAt`
  * - `users/{uid}/sessions/{id}`: finished `Session` fields
+ *
+ * Shared by every signed-in user, keyed by `citySlug`:
+ * - `prayerTimetables/{slug}_{year}`: a `Timetable`, with its months encoded by `encodeMonths`
+ * - `prayerCities/{slug}`: `{ name }` of each city with an upload, to list them without
+ *   downloading every timetable
  */
 interface UserDoc {
 	city?: string | null;
@@ -113,6 +129,10 @@ class App {
 	timer = $state.raw<Timer | null>(null);
 	/** Prayer timetable city; `null` uses the default. */
 	city = $state<string | null>(null);
+	/** Uploaded prayer timetables of the prayer timetable city, for every year. */
+	timetables = $state.raw<Timetable[]>([]);
+	/** Names of the cities with uploaded prayer timetables. */
+	timetableCities = $state.raw<string[]>([]);
 	/** Ticks every 250ms while the timer runs, and every 15s otherwise. */
 	now = $state(Date.now());
 
@@ -157,6 +177,8 @@ class App {
 			this.sessions = [];
 			this.timer = null;
 			this.city = null;
+			this.timetables = [];
+			this.timetableCities = [];
 			this.ready = !user;
 			if (user) this.#unlisten = this.#listen(user.uid);
 		});
@@ -165,7 +187,7 @@ class App {
 	/** Mirror the user's documents into state. Returns a function that stops listening. */
 	#listen(uid: string) {
 		const user = doc(db, 'users', uid);
-		let pending = ['user', 'projects', 'sessions'];
+		let pending = ['user', 'projects', 'sessions', 'timetables', 'cities'];
 		const loaded = (key: string) => {
 			pending = pending.filter((k) => k !== key);
 			if (pending.length === 0) this.ready = true;
@@ -176,6 +198,35 @@ class App {
 			loaded(key);
 		};
 
+		// Timetables follow the city: only its own are downloaded, whatever else has been uploaded.
+		let timetablesOf: string | undefined;
+		let unlistenTimetables = () => {};
+		const listenTimetables = (city: string | null) => {
+			const slug = citySlug(city ?? DEFAULT_CITY);
+			if (slug === timetablesOf) return;
+			timetablesOf = slug;
+			unlistenTimetables();
+			this.timetables = [];
+			unlistenTimetables = onSnapshot(
+				query(
+					collection(db, 'prayerTimetables'),
+					where(documentId(), '>', slug + '_'),
+					where(documentId(), '<', slug + '_~')
+				),
+				(snap) => {
+					this.timetables = snap.docs.flatMap((d) => {
+						const data = d.data({ serverTimestamps: 'estimate' });
+						const months = decodeMonths(data.months, data.year);
+						if (!months) return [];
+						const { city, year, tz, uploadedBy, uploadedAt } = data;
+						return [{ city, year, tz, months, uploadedBy, uploadedAt: uploadedAt.toMillis() }];
+					});
+					loaded('timetables');
+				},
+				failed('timetables')
+			);
+		};
+
 		const unsubscribers = [
 			onSnapshot(
 				user,
@@ -183,6 +234,7 @@ class App {
 					const data = snap.data() as UserDoc | undefined;
 					this.city = data?.city ?? null;
 					this.timer = data?.timer ?? null;
+					listenTimetables(this.city);
 					loaded('user');
 				},
 				failed('user')
@@ -205,9 +257,20 @@ class App {
 					loaded('sessions');
 				},
 				failed('sessions')
+			),
+			onSnapshot(
+				collection(db, 'prayerCities'),
+				(snap) => {
+					this.timetableCities = snap.docs.map((d) => d.data().name);
+					loaded('cities');
+				},
+				failed('cities')
 			)
 		];
-		return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+		return () => {
+			unsubscribers.forEach((unsubscribe) => unsubscribe());
+			unlistenTimetables();
+		};
 	}
 
 	/** The signed-in user's document. */
@@ -245,6 +308,24 @@ class App {
 
 	setCity(city: string) {
 		setDoc(this.#userDoc(), { city }, { merge: true }).catch(fail);
+	}
+
+	/**
+	 * Share a city's timetable for a year with every user, replacing any earlier upload. The
+	 * returned promise settles once the server accepts or refuses it.
+	 */
+	uploadTimetable({ city, year, tz, months }: ParsedTimetable) {
+		const batch = writeBatch(db);
+		batch.set(doc(db, 'prayerTimetables', timetableId(city, year)), {
+			city,
+			year,
+			tz,
+			months: encodeMonths(months),
+			uploadedBy: this.#userDoc().id,
+			uploadedAt: serverTimestamp()
+		});
+		batch.set(doc(db, 'prayerCities', citySlug(city)), { name: city });
+		return batch.commit();
 	}
 
 	/** Switch the timer to a project, closing the previous session. */
