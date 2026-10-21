@@ -1,20 +1,34 @@
 import { defineEnvVars } from '@sveltejs/kit/env';
+import type { FirebaseOptions } from 'firebase/app';
 
-// Firebase web app config, inlined into the client bundle at build time. Set these in `.env`
-// locally (see `.env.example`) and as repository variables in GitHub Actions.
-const firebase = { public: true, static: true } as const;
+const REQUIRED = ['apiKey', 'authDomain', 'projectId', 'appId'] as const;
 
 export const variables = defineEnvVars({
-	PUBLIC_FIREBASE_API_KEY: { ...firebase, description: 'Firebase web config `apiKey`' },
-	PUBLIC_FIREBASE_AUTH_DOMAIN: { ...firebase, description: 'Firebase web config `authDomain`' },
-	PUBLIC_FIREBASE_PROJECT_ID: { ...firebase, description: 'Firebase web config `projectId`' },
-	PUBLIC_FIREBASE_STORAGE_BUCKET: {
-		...firebase,
-		description: 'Firebase web config `storageBucket`'
-	},
-	PUBLIC_FIREBASE_MESSAGING_SENDER_ID: {
-		...firebase,
-		description: 'Firebase web config `messagingSenderId`'
-	},
-	PUBLIC_FIREBASE_APP_ID: { ...firebase, description: 'Firebase web config `appId`' }
+	// Firebase web app config as JSON, inlined into the client bundle at build time. Set it in
+	// `.env` locally (see `.env.example`) and as a repository variable in GitHub Actions.
+	PUBLIC_FIREBASE_CONFIG: {
+		public: true,
+		static: true,
+		description: 'Firebase web app config as JSON, such as `{"apiKey": "...", ...}`',
+		schema: (value): FirebaseOptions => {
+			if (value === undefined) throw new Error('must be set; see .env.example');
+			// Empty in CI when the repository variable is unset, so forks can still lint and
+			// build. The deploy workflow refuses to release without it.
+			if (!value) return {};
+			let config: unknown;
+			try {
+				config = JSON.parse(value);
+			} catch {
+				throw new Error('must be valid JSON, with the keys in double quotes');
+			}
+			if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+				throw new Error('must be a JSON object');
+			}
+			const missing = REQUIRED.filter(
+				(key) => typeof (config as Record<string, unknown>)[key] !== 'string'
+			);
+			if (missing.length) throw new Error(`is missing ${missing.join(', ')}`);
+			return config as FirebaseOptions;
+		}
+	}
 });

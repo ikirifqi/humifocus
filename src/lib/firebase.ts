@@ -1,11 +1,4 @@
-import {
-	PUBLIC_FIREBASE_API_KEY,
-	PUBLIC_FIREBASE_APP_ID,
-	PUBLIC_FIREBASE_AUTH_DOMAIN,
-	PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-	PUBLIC_FIREBASE_PROJECT_ID,
-	PUBLIC_FIREBASE_STORAGE_BUCKET
-} from '$app/env/public';
+import { PUBLIC_FIREBASE_CONFIG } from '$app/env/public';
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import {
@@ -15,18 +8,9 @@ import {
 } from 'firebase/firestore';
 
 // Web config identifies the project to the client SDK; it is not a secret. Access to
-// data is enforced by the security rules in `firestore.rules`. The values come from `.env`
-// locally and from repository variables in GitHub Actions; see `.env.example`.
-const firebaseConfig = {
-	apiKey: PUBLIC_FIREBASE_API_KEY,
-	authDomain: PUBLIC_FIREBASE_AUTH_DOMAIN,
-	projectId: PUBLIC_FIREBASE_PROJECT_ID,
-	storageBucket: PUBLIC_FIREBASE_STORAGE_BUCKET,
-	messagingSenderId: PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-	appId: PUBLIC_FIREBASE_APP_ID
-};
-
-export const firebase = initializeApp(firebaseConfig);
+// data is enforced by the security rules in `firestore.rules`. The config comes from `.env`
+// locally and from a repository variable in GitHub Actions; see `.env.example`.
+export const firebase = initializeApp(PUBLIC_FIREBASE_CONFIG);
 
 export const auth = getAuth(firebase);
 
