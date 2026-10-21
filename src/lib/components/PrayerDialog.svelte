@@ -209,45 +209,47 @@
 						><path d="M12 15V4M7 9l5-5 5 5"></path><path d="M4 19h16"></path></svg
 					>
 				</button>
-				<button class="ctl square" onclick={() => monthOffset--} aria-label="Previous month">
-					<svg
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.8"
-						stroke-linecap="round"
-						stroke-linejoin="round"><path d="M15 5l-7 7 7 7"></path></svg
+				<div class="month-nav">
+					<button class="ctl square" onclick={() => monthOffset--} aria-label="Previous month">
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.8"
+							stroke-linecap="round"
+							stroke-linejoin="round"><path d="M15 5l-7 7 7 7"></path></svg
+						>
+					</button>
+					<span class="month"
+						>{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span
 					>
-				</button>
-				<span class="month"
-					>{month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</span
-				>
-				<button class="ctl square" onclick={() => monthOffset++} aria-label="Next month">
-					<svg
-						width="16"
-						height="16"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.8"
-						stroke-linecap="round"
-						stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg
-					>
-				</button>
-				<button class="ctl square close" onclick={() => (open = false)} aria-label="Close">
-					<svg
-						width="18"
-						height="18"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.8"
-						stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg
-					>
-				</button>
+					<button class="ctl square" onclick={() => monthOffset++} aria-label="Next month">
+						<svg
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.8"
+							stroke-linecap="round"
+							stroke-linejoin="round"><path d="M9 5l7 7-7 7"></path></svg
+						>
+					</button>
+				</div>
 			</div>
+			<button class="ctl square close" onclick={() => (open = false)} aria-label="Close">
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.8"
+					stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"></path></svg
+				>
+			</button>
 		</div>
 		{#if uploadError}
 			<p class="note error" role="alert">{uploadError}</p>
@@ -323,16 +325,18 @@
 	}
 
 	.head {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr auto auto;
+		grid-template-areas: 'title controls close';
 		align-items: center;
-		justify-content: space-between;
 		gap: 12px;
 		padding: 16px 16px 12px 20px;
 		border-bottom: 1px solid var(--line);
-		flex-wrap: wrap;
 	}
 
 	.title {
+		grid-area: title;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
@@ -349,11 +353,37 @@
 	}
 
 	.controls {
+		grid-area: controls;
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		flex-wrap: wrap;
-		justify-content: flex-end;
+	}
+
+	/* Keep the month and its arrows together on one line. */
+	.month-nav {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	/* Too narrow for one row: the title and close button above, then the controls, with the
+	   month navigation stretched over what's left of their row, or over a row of its own. */
+	@media (max-width: 720px) {
+		.head {
+			grid-template-columns: 1fr auto;
+			grid-template-areas:
+				'title close'
+				'controls controls';
+		}
+
+		.controls {
+			flex-wrap: wrap;
+		}
+
+		.month-nav {
+			flex: 1 0 auto;
+			justify-content: space-between;
+		}
 	}
 
 	.ctl {
@@ -377,9 +407,9 @@
 	}
 
 	.close {
+		grid-area: close;
 		border: none;
 		background: transparent;
-		margin-left: 4px;
 	}
 
 	.city {
