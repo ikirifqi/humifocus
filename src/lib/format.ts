@@ -29,3 +29,10 @@ export function startOfDay(t: number) {
 	d.setHours(0, 0, 0, 0);
 	return d.getTime();
 }
+
+/** The midnight that ends the day of `t`. */
+export function endOfDay(t: number) {
+	const d = new Date(t);
+	d.setHours(24, 0, 0, 0);
+	return d.getTime();
+}

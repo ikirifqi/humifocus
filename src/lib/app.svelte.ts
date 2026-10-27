@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { MediaQuery } from 'svelte/reactivity';
 import { auth, db } from '#lib/firebase.js';
+import { endOfDay, startOfDay } from '#lib/format.js';
 import { DEFAULT_CITY, citySlug } from '#lib/prayer.js';
 import {
 	decodeMonths,
@@ -367,6 +368,19 @@ class App {
 		this.now = now;
 	}
 
+	/**
+	 * Stop a timer left running from an earlier day, logging it up to that day's midnight, so
+	 * each day starts from zero. Its project stays chosen for `start`.
+	 */
+	endDay() {
+		if (!this.timer || this.timer.startedAt >= startOfDay(Date.now())) return;
+		const batch = writeBatch(db);
+		this.#closeSession(batch, Date.now());
+		batch.set(this.#userDoc(), { timer: null }, { mergeFields: ['timer'] });
+		this.selected = this.timer.projectId;
+		batch.commit().catch(fail);
+	}
+
 	addNote(text: string) {
 		if (!this.timer) return;
 		updateDoc(this.#userDoc(), {
@@ -398,11 +412,13 @@ class App {
 		if (!this.timer) return;
 		const { acc, paused, resumedAt, startedAt, projectId, notes } = this.timer;
 		// The timer may have started on another device whose clock runs ahead of this one, so
-		// keep the session from ending before it starts, which the security rules reject.
-		const end = Math.max(now, startedAt);
-		const totalMs = Math.min(acc + (paused ? 0 : Math.max(0, now - resumedAt)), end - startedAt);
+		// keep the session from ending before it starts, which the security rules reject. A
+		// session never runs past the midnight after it starts, so it counts toward one day only.
+		const end = Math.min(Math.max(now, startedAt), endOfDay(startedAt));
+		const totalMs = Math.min(acc + (paused ? 0 : Math.max(0, end - resumedAt)), end - startedAt);
 		if (totalMs < 1000) return;
-		batch.set(doc(collection(this.#userDoc(), 'sessions')), {
+		// Keyed by the start, so devices that all close the same timer at midnight write one session.
+		batch.set(doc(this.#userDoc(), 'sessions', String(startedAt)), {
 			start: startedAt,
 			end,
 			totalMs,
@@ -420,6 +436,11 @@ if (browser) {
 	$effect.root(() => {
 		$effect(() => {
 			localStorage.setItem(THEME_KEY, app.theme);
+		});
+
+		// Roll over at midnight, or on opening the app the next day.
+		$effect(() => {
+			if (app.timer && app.timer.startedAt < startOfDay(app.now)) app.endDay();
 		});
 	});
 
