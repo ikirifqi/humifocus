@@ -74,9 +74,19 @@
 		openDays = null;
 	}
 
+	const iso = (t: number) => new Date(t).toISOString();
+
+	function download(text: string, type: string, extension: string) {
+		const url = URL.createObjectURL(new Blob([text], { type }));
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `humifocus-${range}-days.${extension}`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
 	function exportCsv() {
 		const cell = (v: string | number) => `"${String(v).replaceAll('"', '""')}"`;
-		const iso = (t: number) => new Date(t).toISOString();
 		const lines = [
 			['Project', 'Start', 'End', 'Minutes', 'Notes'].map(cell).join(','),
 			...inRange.map((s) =>
@@ -91,12 +101,7 @@
 					.join(',')
 			)
 		];
-		const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = `humifocus-${range}-days.csv`;
-		a.click();
-		URL.revokeObjectURL(url);
+		download(lines.join('\n'), 'text/csv', 'csv');
 	}
 </script>
 
