@@ -2,6 +2,7 @@ import { browser } from '$app/env';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import {
 	addDoc,
+	arrayRemove,
 	arrayUnion,
 	collection,
 	doc,
@@ -386,6 +387,23 @@ class App {
 		updateDoc(this.#userDoc(), {
 			'timer.notes': arrayUnion({ at: Date.now(), text })
 		}).catch(fail);
+	}
+
+	/**
+	 * Reword a note on the running timer, keeping when it was written. This writes the whole list
+	 * to keep its order, so a note another device added unseen is lost. A transaction would prevent
+	 * that but cannot run offline.
+	 */
+	editNote(at: number, text: string) {
+		if (!this.timer) return;
+		updateDoc(this.#userDoc(), {
+			'timer.notes': this.timer.notes.map((n) => (n.at === at ? { at, text } : n))
+		}).catch(fail);
+	}
+
+	removeNote(note: Note) {
+		if (!this.timer) return;
+		updateDoc(this.#userDoc(), { 'timer.notes': arrayRemove(note) }).catch(fail);
 	}
 
 	saveProject({ id, name, color }: { id: string | null; name: string; color: string }) {
