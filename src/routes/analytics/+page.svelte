@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { app, totalsByProject, type Session } from '#lib/app.svelte.js';
-	import { formatDuration, formatTime, startOfDay } from '#lib/format.js';
+	import { formatDuration, formatTime, pad, startOfDay } from '#lib/format.js';
 
 	const RANGES = [7, 30, 90];
 	const DAY = 86400000;
@@ -76,6 +76,12 @@
 
 	const iso = (t: number) => new Date(t).toISOString();
 
+	/** The local calendar date of a time, such as `2026-11-01`. */
+	function localDate(t: number) {
+		const d = new Date(t);
+		return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+	}
+
 	function download(text: string, type: string, extension: string) {
 		const url = URL.createObjectURL(new Blob([text], { type }));
 		const a = document.createElement('a');
@@ -103,7 +109,60 @@
 		];
 		download(lines.join('\n'), 'text/csv', 'csv');
 	}
+
+	/** Export what the page shows for the chosen range and project, along with those filters. */
+	function exportJson() {
+		const project = (id: string) => ({ id, name: app.projectOf(id).name });
+		const stats = {
+			exportedAt: iso(Date.now()),
+			filter: {
+				days: range,
+				from: localDate(rangeStart),
+				to: localDate(dayStart),
+				project: filter === 'all' ? null : project(filter)
+			},
+			summary: {
+				totalMs: total,
+				sessions: inRange.length,
+				dailyAverageMs: Math.round(total / range),
+				notes: noteCount
+			},
+			byProject: Object.entries(totalsByProject(inRange))
+				.map(([id, totalMs]) => ({ ...project(id), totalMs }))
+				.toSorted((a, b) => b.totalMs - a.totalMs),
+			byDay: days.map((d) => ({
+				date: localDate(d.start),
+				totalMs: d.ms,
+				sessions: d.sessions.length,
+				notes: d.notes
+			})),
+			sessions: inRange.map((s) => ({
+				project: project(s.projectId),
+				start: iso(s.start),
+				end: iso(s.end),
+				totalMs: s.totalMs,
+				live: !!s.live,
+				notes: s.notes.map((n) => ({ at: iso(n.at), text: n.text }))
+			}))
+		};
+		download(JSON.stringify(stats, null, 2), 'application/json', 'json');
+	}
 </script>
+
+{#snippet exportButton(format: string, onclick: () => void)}
+	<button class="btn btn-ghost export" {onclick} disabled={inRange.length === 0}>
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.8"
+			stroke-linecap="round"
+			stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5"></path><path d="M4 19h16"></path></svg
+		>Export {format}
+	</button>
+{/snippet}
 
 <div class="screen">
 	<header>
@@ -140,19 +199,10 @@
 				<option value={p.id}>{p.name}</option>
 			{/each}
 		</select>
-		<button class="btn btn-ghost export" onclick={exportCsv} disabled={inRange.length === 0}>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.8"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				><path d="M12 4v11M7 10l5 5 5-5"></path><path d="M4 19h16"></path></svg
-			>Export {range} days
-		</button>
+		<div class="exports">
+			{@render exportButton('CSV', exportCsv)}
+			{@render exportButton('JSON', exportJson)}
+		</div>
 	</div>
 
 	<div class="stats">
@@ -346,8 +396,14 @@
 		border-color: var(--accent);
 	}
 
-	.export {
+	.exports {
 		margin-left: auto;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 10px;
+	}
+
+	.export {
 		padding: 0 18px 0 14px;
 		height: 46px;
 	}
