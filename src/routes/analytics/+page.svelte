@@ -13,9 +13,12 @@
 	let openDays = $state<Record<string, boolean> | null>(null);
 
 	const dayStart = $derived(startOfDay(app.now));
-	const inRangeAll = $derived(
-		app.allSessions.filter((s) => s.start >= dayStart - (range - 1) * DAY)
-	);
+	// Counted in calendar days, since a day across a daylight saving change is not 24 hours.
+	const rangeStart = $derived.by(() => {
+		const d = new Date(dayStart);
+		return new Date(d.getFullYear(), d.getMonth(), d.getDate() - (range - 1)).getTime();
+	});
+	const inRangeAll = $derived(app.allSessions.filter((s) => s.start >= rangeStart));
 	const inRange = $derived(
 		(filter === 'all' ? inRangeAll : inRangeAll.filter((s) => s.projectId === filter)).toSorted(
 			(a, b) => b.start - a.start
