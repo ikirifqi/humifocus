@@ -14,9 +14,9 @@ A simple focus timer for people who constantly switch context. Pick what you are
 
 - **One-click context switching.** Choose a project and the timer starts; switching closes the previous session automatically.
 - **Pause and resume** without losing the session.
-- **Session notes.** Jot down what you did or where you left off, attached to the running session.
+- **Session notes.** Jot down what you did or where you left off, attached to the running session, and edit or remove them while it runs.
 - **Projects** with colors and the time logged on each.
-- **Analytics** over 7, 30, or 90 days: total focus, daily average, time per project, a day-by-day history with notes, and CSV export.
+- **Analytics** over 7, 30, or 90 days: total focus, daily average, time per project, a day-by-day history with notes, and CSV or JSON export of the chosen range and project.
 - **Prayer timetable** for the next prayer and the whole month, with regional calculation methods for Jakarta, Kuala Lumpur, Dubai, Cairo, Istanbul, London, and New York. Upload a year of official times for any city as CSV, and every user can pick it.
 - **Synced and offline-ready.** Your data follows your account across devices, and keeps working without a connection.
 - **Light and dark themes.**
