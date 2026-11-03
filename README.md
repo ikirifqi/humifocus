@@ -113,6 +113,39 @@ To skip the key prompt, set `API_CO_ID_KEY` for that one command, such as from a
 API_CO_ID_KEY="$(cat path/to/api-key)" pnpm timetable --regency 3204
 ```
 
+## Fetch metrics
+
+`scripts/fetch_metrics.sh` prints one day's focus time and notes per project as JSON, so tools such as n8n can read them without a backend. It signs in with a HumiFocus login, so it only sees that account's data. It needs `curl` and `jq`.
+
+```sh
+FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_metrics.sh "you@example.com" "password" "yesterday"
+```
+
+The day is `today`, `yesterday`, or a date such as `2026-11-02`, in the timezone of `TZ`. Set `TZ=Asia/Jakarta` on servers that run in UTC. The API key and project ID are the `apiKey` and `projectId` from `PUBLIC_FIREBASE_CONFIG`.
+
+```json
+{
+	"date": "2026-11-02",
+	"hours": 2.25,
+	"totalMs": 8100000,
+	"sessions": 3,
+	"projects": [
+		{
+			"id": "abcd123",
+			"name": "Website redesign",
+			"hours": 2,
+			"totalMs": 7200000,
+			"sessions": 2,
+			"notes": [{ "at": "2026-11-02T03:14:00Z", "text": "Fixed the login form" }]
+		}
+	]
+}
+```
+
+Time leaves out pauses, and only finished sessions count: a timer left running is not included until the app closes it. Errors go to stderr with a non-zero exit, and stdout stays empty.
+
+Arguments are visible in your shell history and the process list, so pass the password from a secret store where you can, such as `"$HUMIFOCUS_PASSWORD"`.
+
 ## Set up Firebase
 
 Whether you run HumiFocus locally or deploy a fork, it needs a Firebase project of your own.
