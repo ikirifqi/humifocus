@@ -1,8 +1,8 @@
 #!/bin/sh
-# Print one day's focus time and notes per project as JSON, read from Firestore's REST API with
-# a HumiFocus login. Requires curl and jq.
+# Print one day's focus time and notes for a HumiFocus project as JSON, read from Firestore's REST
+# API with a HumiFocus login. fetch_projects.sh lists the project ids.
 #
-#   FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_metrics.sh EMAIL PASSWORD DAY
+#   FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_metrics.sh PROJECT_ID EMAIL PASSWORD DAY
 #
 # DAY is `today`, `yesterday`, or YYYY-MM-DD, in the timezone of the TZ environment variable.
 # Only finished sessions count: the running timer is not part of the history until it closes.
@@ -12,11 +12,13 @@ set -eu
 # shellcheck source=scripts/firebase.sh
 . "$(dirname "$0")/firebase.sh"
 
-[ $# -eq 3 ] || fail 'usage: fetch_metrics.sh EMAIL PASSWORD today|yesterday|YYYY-MM-DD'
+[ $# -eq 4 ] || fail 'usage: fetch_metrics.sh PROJECT_ID EMAIL PASSWORD today|yesterday|YYYY-MM-DD'
+[ -n "$1" ] || fail 'PROJECT_ID must not be empty'
 
-email=$1
-password=$2
-day=$3
+project=$1
+email=$2
+password=$3
+day=$4
 
 # `date` takes different flags on macOS (BSD) and on Linux (GNU and BusyBox).
 if date -j >/dev/null 2>&1; then
@@ -42,9 +44,11 @@ to=$(midnight "$(date_of $((from + 129600)))")
 sign_in "$email" "$password"
 
 projects=$(list_projects)
-names=$(printf '%s' "$projects" | jq -c 'map({ key: .id, value: .name }) | from_entries')
+name=$(printf '%s' "$projects" | jq -r --arg project "$project" \
+	'map(select(.id == $project))[0].name // empty')
 
-sessions=$(jq -n --arg from "${from}000" --arg to "${to}000" '
+# Sessions are filtered by project here, as filtering on it in the query needs a composite index.
+all_sessions=$(jq -n --arg from "${from}000" --arg to "${to}000" '
 	def bound($op; $value): {
 		fieldFilter: { field: { fieldPath: "start" }, op: $op, value: { integerValue: $value } }
 	};
@@ -55,33 +59,27 @@ sessions=$(jq -n --arg from "${from}000" --arg to "${to}000" '
 		] } },
 		orderBy: [{ field: { fieldPath: "start" } }]
 	} }' | run_query)
-check "$sessions" 'reading sessions failed'
+check "$all_sessions" 'reading sessions failed'
+sessions=$(printf '%s' "$all_sessions" | jq -c --arg project "$project" \
+	'[.[].document.fields // empty | select(.projectId.stringValue == $project)]')
 
-printf '%s' "$sessions" | jq --arg date "$day" --argjson names "$names" '
-	def hours: . / 36000 | round / 100;
-	def total: map(.totalMs.integerValue | tonumber) | add // 0;
-	[.[].document.fields // empty]
+# A deleted project keeps its history, so only an unknown id with no sessions is a mistake.
+[ -n "$name" ] || [ "$sessions" != '[]' ] || fail "no project with id '$project'"
+
+printf '%s' "$sessions" | jq --arg date "$day" --arg id "$project" \
+	--arg name "${name:-Deleted project}" '
+	(map(.totalMs.integerValue | tonumber) | add // 0) as $ms
 	| {
 		date: $date,
-		hours: (total | hours),
-		totalMs: total,
+		project: { $id, $name },
+		hours: ($ms / 36000 | round / 100),
+		totalMs: $ms,
 		sessions: length,
-		projects: (
-			group_by(.projectId.stringValue)
-			| map({
-				id: .[0].projectId.stringValue,
-				name: ($names[.[0].projectId.stringValue] // "Deleted project"),
-				hours: (total | hours),
-				totalMs: total,
-				sessions: length,
-				notes: [
-					.[].notes.arrayValue.values[]?.mapValue.fields
-					| {
-						at: (.at.integerValue | tonumber / 1000 | floor | todate),
-						text: .text.stringValue
-					}
-				]
-			})
-			| sort_by(-.totalMs)
-		)
+		notes: [
+			.[].notes.arrayValue.values[]?.mapValue.fields
+			| {
+				at: (.at.integerValue | tonumber / 1000 | floor | todate),
+				text: .text.stringValue
+			}
+		]
 	}'
