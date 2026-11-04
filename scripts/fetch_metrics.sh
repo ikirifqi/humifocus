@@ -9,14 +9,10 @@
 
 set -eu
 
-fail() {
-	echo "fetch_metrics: $1" >&2
-	exit 1
-}
+# shellcheck source=scripts/firebase.sh
+. "$(dirname "$0")/firebase.sh"
 
 [ $# -eq 3 ] || fail 'usage: fetch_metrics.sh EMAIL PASSWORD today|yesterday|YYYY-MM-DD'
-[ -n "${FIREBASE_API_KEY:-}" ] || fail 'FIREBASE_API_KEY must be set'
-[ -n "${FIREBASE_PROJECT_ID:-}" ] || fail 'FIREBASE_PROJECT_ID must be set'
 
 email=$1
 password=$2
@@ -43,32 +39,10 @@ from=$(midnight "$day") || fail "'$day' is not a valid date"
 [ "$(date_of "$from")" = "$day" ] || fail "'$day' is not a valid date"
 to=$(midnight "$(date_of $((from + 129600)))")
 
-# Exit with the message of a Firebase error response, if this is one.
-check() {
-	message=$(printf '%s' "$1" |
-		jq -r '(if type == "array" then .[0] else . end) | .error.message? // empty')
-	[ -z "$message" ] || fail "$2: $message"
-}
+sign_in "$email" "$password"
 
-auth=$(jq -n --arg email "$email" --arg password "$password" \
-	'{ $email, $password, returnSecureToken: true }' |
-	curl -sS "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=$FIREBASE_API_KEY" \
-		-H 'Content-Type: application/json' -d @-)
-check "$auth" 'sign-in failed'
-token=$(printf '%s' "$auth" | jq -r .idToken)
-user_id=$(printf '%s' "$auth" | jq -r .localId)
-
-# Run a structured query on the signed-in user's document, reading the query from stdin.
-run_query() {
-	curl -sS "https://firestore.googleapis.com/v1/projects/$FIREBASE_PROJECT_ID/databases/(default)/documents/users/${user_id}:runQuery" \
-		-H "Authorization: Bearer $token" -H 'Content-Type: application/json' -d @-
-}
-
-projects=$(jq -n '{ structuredQuery: { from: [{ collectionId: "projects" }] } }' | run_query)
-check "$projects" 'reading projects failed'
-names=$(printf '%s' "$projects" | jq -c '
-	[.[].document // empty | { key: (.name | split("/") | last), value: .fields.name.stringValue }]
-	| from_entries')
+projects=$(list_projects)
+names=$(printf '%s' "$projects" | jq -c 'map({ key: .id, value: .name }) | from_entries')
 
 sessions=$(jq -n --arg from "${from}000" --arg to "${to}000" '
 	def bound($op; $value): {
