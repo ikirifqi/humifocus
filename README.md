@@ -113,38 +113,40 @@ To skip the key prompt, set `API_CO_ID_KEY` for that one command, such as from a
 API_CO_ID_KEY="$(cat path/to/api-key)" pnpm timetable --regency 3204
 ```
 
-## Fetch metrics
+## Fetch projects and metrics
 
-`scripts/fetch_metrics.sh` prints one day's focus time and notes per project as JSON, so tools such as n8n can read them without a backend. It signs in with a HumiFocus login, so it only sees that account's data. It needs `curl` and `jq`.
+Two scripts print your data as JSON, so tools such as n8n can read it without a backend. They sign in with a HumiFocus login, so they only see that account's data. They need `curl` and `jq`, and `scripts/firebase.sh` next to them. `FIREBASE_API_KEY` and `FIREBASE_PROJECT_ID` are the `apiKey` and `projectId` from `PUBLIC_FIREBASE_CONFIG`.
+
+`scripts/fetch_projects.sh` lists your projects and their ids:
 
 ```sh
-FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_metrics.sh "you@example.com" "password" "yesterday"
+FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_projects.sh "you@example.com" "password"
 ```
 
-The day is `today`, `yesterday`, or a date such as `2026-11-02`, in the timezone of `TZ`. Set `TZ=Asia/Jakarta` on servers that run in UTC. The API key and project ID are the `apiKey` and `projectId` from `PUBLIC_FIREBASE_CONFIG`.
+```json
+[{ "id": "abcd123", "name": "Website redesign", "color": "#4f7fd9" }]
+```
+
+`scripts/fetch_metrics.sh` prints one day's focus time and notes for a project:
+
+```sh
+FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_metrics.sh "abcd123" "you@example.com" "password" "yesterday"
+```
 
 ```json
 {
 	"date": "2026-11-02",
-	"hours": 2.25,
-	"totalMs": 8100000,
-	"sessions": 3,
-	"projects": [
-		{
-			"id": "abcd123",
-			"name": "Website redesign",
-			"hours": 2,
-			"totalMs": 7200000,
-			"sessions": 2,
-			"notes": [{ "at": "2026-11-02T03:14:00Z", "text": "Fixed the login form" }]
-		}
-	]
+	"project": { "id": "abcd123", "name": "Website redesign" },
+	"hours": 2,
+	"totalMs": 7200000,
+	"sessions": 2,
+	"notes": [{ "at": "2026-11-02T03:14:00Z", "text": "Fixed the login form" }]
 }
 ```
 
-Time leaves out pauses, and only finished sessions count: a timer left running is not included until the app closes it. Errors go to stderr with a non-zero exit, and stdout stays empty.
+The day is `today`, `yesterday`, or a date such as `2026-11-02`, in the timezone of `TZ`. Set `TZ=Asia/Jakarta` on servers that run in UTC. Time leaves out pauses, and only finished sessions count: a timer left running is not included until the app closes it. A project with no sessions that day reports zero, and an unknown project id is an error.
 
-Arguments are visible in your shell history and the process list, so pass the password from a secret store where you can, such as `"$HUMIFOCUS_PASSWORD"`.
+Errors go to stderr with a non-zero exit, and stdout stays empty. Arguments are visible in your shell history and the process list, so pass the password from a secret store where you can, such as `"$HUMIFOCUS_PASSWORD"`.
 
 ## Set up Firebase
 
