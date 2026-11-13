@@ -369,6 +369,9 @@ class App {
 		batch.set(this.#userDoc(), { timer }, { mergeFields: ['timer'] });
 		batch.commit().catch(fail);
 		this.now = now;
+		// Save the new session once it counts, rather than at the next minute, so it is in the
+		// history even if the tab is closed right away.
+		setTimeout(() => this.save(), 1500);
 	}
 
 	togglePause() {
