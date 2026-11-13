@@ -542,7 +542,18 @@ if (browser) {
 	}, 60000);
 	document.addEventListener('visibilitychange', () => {
 		if (document.visibilityState === 'hidden') app.save();
+		else atMidnight();
 	});
+
+	// Roll over at midnight even when the clock above is slowed, as in a background tab. Timers
+	// can run late after the computer sleeps, so becoming visible again checks and re-arms it.
+	let midnight: ReturnType<typeof setTimeout> | undefined;
+	function atMidnight() {
+		clearTimeout(midnight);
+		app.now = Date.now();
+		midnight = setTimeout(atMidnight, endOfDay(app.now) - app.now);
+	}
+	atMidnight();
 	addEventListener('pagehide', () => app.save());
 	addEventListener('online', () => app.save());
 }
