@@ -150,23 +150,26 @@ class App {
 			: 0
 	);
 
-	/** Finished sessions plus the running one, if any. */
-	allSessions: Session[] = $derived(
-		this.timer
-			? [
-					...this.sessions,
-					{
-						id: 'live',
-						start: this.timer.startedAt,
-						end: this.now,
-						totalMs: this.elapsed,
-						projectId: this.timer.projectId,
-						notes: this.timer.notes,
-						live: true
-					}
-				]
-			: this.sessions
-	);
+	/**
+	 * Finished sessions plus the running one, if any. The running session's stored copy, keyed by
+	 * its start, lags the clock, so the live row replaces it.
+	 */
+	allSessions: Session[] = $derived.by(() => {
+		if (!this.timer) return this.sessions;
+		const stored = String(this.timer.startedAt);
+		return [
+			...this.sessions.filter((s) => s.id !== stored),
+			{
+				id: 'live',
+				start: this.timer.startedAt,
+				end: this.now,
+				totalMs: this.elapsed,
+				projectId: this.timer.projectId,
+				notes: this.timer.notes,
+				live: true
+			}
+		];
+	});
 
 	/** Follow Firebase Auth, loading each signed-in user's data in turn. */
 	connect() {
