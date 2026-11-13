@@ -81,7 +81,7 @@ type Theme = 'system' | 'light' | 'dark';
  * Firestore layout, all owned by one user:
  * - `users/{uid}`: `UserDoc`, settings and the running timer, so every device sees it
  * - `users/{uid}/projects/{id}`: `Project` fields plus `createdAt`
- * - `users/{uid}/sessions/{id}`: finished `Session` fields
+ * - `users/{uid}/sessions/{id}`: `Session` fields keyed by the start, finished or still running
  *
  * Shared by every signed-in user, keyed by `citySlug`:
  * - `prayerTimetables/{slug}_{year}`: a `Timetable`, with its months encoded by `encodeMonths`

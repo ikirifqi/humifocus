@@ -5,7 +5,7 @@
 #   FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_metrics.sh PROJECT_ID EMAIL PASSWORD DAY
 #
 # DAY is `today`, `yesterday`, or YYYY-MM-DD, in the timezone of the TZ environment variable.
-# Only finished sessions count: the running timer is not part of the history until it closes.
+# A running session counts up to its last save, which the app makes every minute while it is open.
 
 set -eu
 
