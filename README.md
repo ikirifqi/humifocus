@@ -144,7 +144,7 @@ FIREBASE_API_KEY=... FIREBASE_PROJECT_ID=... scripts/fetch_metrics.sh "abcd123" 
 }
 ```
 
-The day is `today`, `yesterday`, or a date such as `2026-11-02`, in the timezone of `TZ`. Set `TZ=Asia/Jakarta` on servers that run in UTC. Time leaves out pauses. A running session counts up to its last save, which the app makes every minute while it is open and when it is hidden or closed; a timer left running overnight counts up to midnight once the app is next opened. A project with no sessions that day reports zero, and an unknown project id is an error.
+The day is `today`, `yesterday`, or a date such as `2026-11-02`, in the timezone of `TZ`. Set `TZ=Asia/Jakarta` on servers that run in UTC. Time leaves out pauses. A running session counts up to its last save, which the app makes every minute while it is open and when its tab is hidden, so it can be up to a minute behind when the tab is closed. A timer left running overnight counts up to midnight once the app is next opened. A project with no sessions that day reports zero, and an unknown project id is an error.
 
 Errors go to stderr with a non-zero exit, and stdout stays empty. Arguments are visible in your shell history and the process list, so pass the password from a secret store where you can, such as `"$HUMIFOCUS_PASSWORD"`.
 
