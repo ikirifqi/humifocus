@@ -430,11 +430,15 @@ class App {
 		write.catch(fail);
 	}
 
-	/** Remove a project. Its logged sessions stay in the history; a running timer is dropped. */
+	/**
+	 * Remove a project. Its logged sessions stay in the history, and a running timer on it stops
+	 * and joins them, as the running session is already saved while it runs.
+	 */
 	deleteProject(id: string) {
 		const batch = writeBatch(db);
 		batch.delete(doc(this.#userDoc(), 'projects', id));
 		if (this.timer?.projectId === id) {
+			this.#closeSession(batch, Date.now());
 			batch.set(this.#userDoc(), { timer: null }, { mergeFields: ['timer'] });
 		}
 		batch.commit().catch(fail);
