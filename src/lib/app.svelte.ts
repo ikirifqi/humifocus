@@ -10,9 +10,11 @@ import {
 	onSnapshot,
 	orderBy,
 	query,
+	runTransaction,
 	serverTimestamp,
 	setDoc,
 	updateDoc,
+	waitForPendingWrites,
 	where,
 	writeBatch,
 	type WriteBatch
@@ -134,6 +136,10 @@ class App {
 	now = $state(Date.now());
 
 	#unlisten: (() => void) | null = null;
+	/** Ids of the sessions this device closed, which a save still under way must leave alone. */
+	#closed = new Set<string>();
+	#saving = false;
+	#saveAgain = false;
 
 	#systemDark = new MediaQuery('(prefers-color-scheme: dark)');
 	dark = $derived(this.theme === 'system' ? this.#systemDark.current : this.theme === 'dark');
@@ -184,6 +190,7 @@ class App {
 			this.city = null;
 			this.timetables = [];
 			this.timetableCities = [];
+			this.#closed.clear();
 			this.ready = !user;
 			if (user) this.#unlisten = this.#listen(user.uid);
 		});
@@ -232,6 +239,7 @@ class App {
 			);
 		};
 
+		let opened = false;
 		const unsubscribers = [
 			onSnapshot(
 				user,
@@ -241,6 +249,10 @@ class App {
 					this.timer = data?.timer ?? null;
 					// A timer started on any device replaces the choice waiting for `start`.
 					if (this.timer) this.selected = null;
+					// Save the running session on opening the app and after each change this device
+					// makes to the timer, such as a pause or a note. Other devices save their own.
+					if (!opened || snap.metadata.hasPendingWrites) this.save();
+					opened = true;
 					listenTimetables(this.city);
 					loaded('user');
 				},
@@ -431,10 +443,58 @@ class App {
 	/** Add the running timer, if any, to the history as a finished session. */
 	#closeSession(batch: WriteBatch, now: number) {
 		if (!this.timer) return;
+		this.#closed.add(String(this.timer.startedAt));
 		const session = sessionOf(this.timer, now);
 		if (!session) return;
 		// Keyed by the start, so devices that all close the same timer at midnight write one session.
 		batch.set(doc(this.#userDoc(), 'sessions', String(session.start)), session);
+	}
+
+	/**
+	 * Store the running session as it stands, under the same id its close will use, so a day is in
+	 * the history before it ends even if the app is closed and never sees midnight.
+	 *
+	 * A save never moves a session backwards. It reads the server's timer and stored session in a
+	 * transaction and writes only when its `end` and `totalMs` are at least the stored ones, so a
+	 * late or stale save cannot undo a later save, a close on another device, or a script's close.
+	 * It never writes the timer, so a timer cleared elsewhere stays cleared. A transaction needs the
+	 * server, so offline a save waits, and runs once on reconnecting after this device's queued
+	 * changes reach the server. Calls made while a save is under way merge into one more save.
+	 */
+	save() {
+		if (!this.timer) return;
+		if (this.#saving) {
+			this.#saveAgain = true;
+			return;
+		}
+		this.#saving = true;
+		this.#save()
+			.catch(fail)
+			.finally(() => {
+				this.#saving = false;
+				if (this.#saveAgain) {
+					this.#saveAgain = false;
+					this.save();
+				}
+			});
+	}
+
+	async #save() {
+		await waitForPendingWrites(db);
+		const user = this.#userDoc();
+		await runTransaction(db, async (tx) => {
+			const timer = ((await tx.get(user)).data() as UserDoc | undefined)?.timer;
+			// A timer from an earlier day is closed at its midnight by `endDay`.
+			if (!timer || timer.startedAt < startOfDay(Date.now())) return;
+			const id = String(timer.startedAt);
+			const ref = doc(user, 'sessions', id);
+			const stored = (await tx.get(ref)).data() as Omit<Session, 'id'> | undefined;
+			const session = sessionOf(timer, Date.now());
+			// A close on this device may still be on its way to the server.
+			if (!session || this.#closed.has(id)) return;
+			if (stored && (stored.end > session.end || stored.totalMs > session.totalMs)) return;
+			tx.set(ref, session);
+		});
 	}
 }
 
@@ -474,4 +534,15 @@ if (browser) {
 		const t = Date.now();
 		if ((app.timer && !app.timer.paused) || t - app.now >= 15000) app.now = t;
 	}, 250);
+
+	// Keep the stored running session at most a minute behind, and save it at once when the page
+	// may stop running: hidden, closed, or back online after queuing changes.
+	setInterval(() => {
+		if (app.timer && !app.timer.paused) app.save();
+	}, 60000);
+	document.addEventListener('visibilitychange', () => {
+		if (document.visibilityState === 'hidden') app.save();
+	});
+	addEventListener('pagehide', () => app.save());
+	addEventListener('online', () => app.save());
 }
