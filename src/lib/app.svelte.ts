@@ -466,7 +466,8 @@ class App {
 	 * changes reach the server. Calls made while a save is under way merge into one more save.
 	 */
 	save() {
-		if (!this.timer) return;
+		// Offline, a save could only fail and log; going online saves again.
+		if (!this.timer || !navigator.onLine) return;
 		if (this.#saving) {
 			this.#saveAgain = true;
 			return;
