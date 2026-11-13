@@ -428,22 +428,27 @@ class App {
 	/** Add the running timer, if any, to the history as a finished session. */
 	#closeSession(batch: WriteBatch, now: number) {
 		if (!this.timer) return;
-		const { acc, paused, resumedAt, startedAt, projectId, notes } = this.timer;
-		// The timer may have started on another device whose clock runs ahead of this one, so
-		// keep the session from ending before it starts, which the security rules reject. A
-		// session never runs past the midnight after it starts, so it counts toward one day only.
-		const end = Math.min(Math.max(now, startedAt), endOfDay(startedAt));
-		const totalMs = Math.min(acc + (paused ? 0 : Math.max(0, end - resumedAt)), end - startedAt);
-		if (totalMs < 1000) return;
+		const session = sessionOf(this.timer, now);
+		if (!session) return;
 		// Keyed by the start, so devices that all close the same timer at midnight write one session.
-		batch.set(doc(this.#userDoc(), 'sessions', String(startedAt)), {
-			start: startedAt,
-			end,
-			totalMs,
-			projectId,
-			notes
-		});
+		batch.set(doc(this.#userDoc(), 'sessions', String(session.start)), session);
 	}
+}
+
+/**
+ * The session document a timer stands for at `now`, or `null` while it has counted under a
+ * second. Every write of a session goes through here, and scripts that close a timer for the app
+ * repeat the same arithmetic, so keep them in step.
+ */
+function sessionOf(timer: Timer, now: number) {
+	const { acc, paused, resumedAt, startedAt, projectId, notes } = timer;
+	// The timer may have started on another device whose clock runs ahead of this one, so
+	// keep the session from ending before it starts, which the security rules reject. A
+	// session never runs past the midnight after it starts, so it counts toward one day only.
+	const end = Math.min(Math.max(now, startedAt), endOfDay(startedAt));
+	const totalMs = Math.min(acc + (paused ? 0 : Math.max(0, end - resumedAt)), end - startedAt);
+	if (totalMs < 1000) return null;
+	return { start: startedAt, end, totalMs, projectId, notes };
 }
 
 export const app = new App();
