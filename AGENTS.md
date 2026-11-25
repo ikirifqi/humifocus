@@ -9,6 +9,37 @@ HumiFocus is a simple timer for people who constantly switch context, keeping th
 - Framework: SvelteKit (Svelte 5 runes mode) with TypeScript in strict mode.
 - Package manager: pnpm. Do not use npm or yarn, and do not commit other lockfiles.
 - Output: a static single-page app built by `@sveltejs/adapter-static` into `build/`.
+- Node 26 or later (`.node-version`, `engine-strict=true` in `.npmrc`). Hosted on Cloudflare Pages.
+
+## Structure
+
+```
+.
+├── src/
+│   ├── env.ts              # declares and validates PUBLIC_FIREBASE_CONFIG (SvelteKit 3 env API)
+│   ├── app.css             # theme tokens as CSS variables; dark via media query or data-theme
+│   ├── lib/                # state, Firebase, domain logic, components; see src/lib/AGENTS.md
+│   └── routes/             # `/` timer, `/analytics`, `/projects`; the layout gates on sign-in
+├── scripts/                # local tools: timetable CSV (Node) and Firestore REST readers (sh)
+├── firestore.rules         # the only access control and schema validation there is
+├── docs/screenshots/       # README images
+└── .github/workflows/      # ci.yml (every push), deploy.yml (manual release from main)
+```
+
+## Where to look
+
+| Task                                   | Location                                                  |
+| -------------------------------------- | --------------------------------------------------------- |
+| Timer, sessions, notes, projects logic | `src/lib/app.svelte.ts`                                   |
+| Stored document shapes                 | `firestore.rules` + interfaces in `src/lib/app.svelte.ts` |
+| Prayer time calculation and cities     | `src/lib/prayer.ts`                                       |
+| Timetable CSV parsing and encoding     | `src/lib/timetable.ts`, `scripts/prayer-timetable.ts`     |
+| Duration, clock, and day helpers       | `src/lib/format.ts`                                       |
+| Sign-in gate, theme, fonts             | `src/routes/+layout.svelte`                               |
+| Analytics and CSV/JSON export          | `src/routes/analytics/+page.svelte`                       |
+| JSON for n8n and other tools           | `scripts/fetch_projects.sh`, `scripts/fetch_metrics.sh`   |
+| Release and hosting                    | `.github/workflows/deploy.yml`, README "Deployment"       |
+| User-facing behavior docs              | `README.md` (keep in step with behavior; see Gotchas)     |
 
 ## Commands
 
@@ -21,6 +52,8 @@ HumiFocus is a simple timer for people who constantly switch context, keeping th
 | `pnpm check`   | Type-check Svelte and TypeScript sources      |
 | `pnpm lint`    | Check formatting (Prettier) and lint (ESLint) |
 | `pnpm format`  | Format all files with Prettier                |
+
+`pnpm timetable` writes a prayer timetable CSV from api.co.id; it needs an API key and the network, so do not run it in checks. There is no test suite: verify with the three checks above, and exercise behavior in `pnpm dev` against a Firebase project.
 
 ## Linting and formatting
 
@@ -43,6 +76,30 @@ HumiFocus is a simple timer for people who constantly switch context, keeping th
 - App state in `src/lib/app.svelte.ts` mirrors Firestore snapshots. Change data by writing to Firestore, not by mutating state; the local cache feeds the write back through the listeners.
 - `firestore.rules` validates every document shape. When a stored field changes, update the rules in the same commit and deploy them with `pnpm dlx firebase-tools deploy --only firestore:rules`.
 - Prefer the Svelte CLI (`pnpm dlx sv ...`) over hand-writing boilerplate when adding official integrations.
+
+## Cross-file contracts
+
+These pairs must change together; nothing checks them automatically.
+
+| If you change                                        | Also change                                                          |
+| ---------------------------------------------------- | -------------------------------------------------------------------- |
+| A field of `Timer`, `Session`, `Project`, `UserDoc`  | `firestore.rules` (`hasExactly` rejects unknown or missing keys)     |
+| `citySlug` in `src/lib/prayer.ts`                    | `citySlug` in `firestore.rules`                                      |
+| `timetableId`, `encodeMonths`, `MIN_YEAR`/`MAX_YEAR` | `isTimetable` / `isTimetableMonth` in `firestore.rules`              |
+| `CSV_COLUMNS` in `src/lib/timetable.ts`              | `COLUMNS` in `scripts/prayer-timetable.ts`, README CSV example       |
+| `sessionOf` arithmetic in `src/lib/app.svelte.ts`    | Any script that closes a timer for the app                           |
+| Firestore layout or how sessions are saved           | Layout comment in `app.svelte.ts`, README tables, `fetch_metrics.sh` |
+| Project ordering (`createdAt`)                       | `list_projects` in `scripts/firebase.sh`                             |
+
+## Gotchas
+
+- SvelteKit 3 APIs: env comes from `$app/env` and `$app/env/public` (declared in `src/env.ts`), not `$app/environment` or `$env/*`. Build links with `resolve()` from `$app/paths`.
+- `pnpm build` and `pnpm check` need `PUBLIC_FIREBASE_CONFIG` defined. An empty value is accepted (CI on forks), so `PUBLIC_FIREBASE_CONFIG= pnpm build` works without a `.env`; unset fails.
+- All stored times are integer epoch milliseconds (`isTime` in the rules). The only Firestore `Timestamp` is a timetable's `uploadedAt`, written with `serverTimestamp()`.
+- Days are local calendar days. Step between days by calendar date, never by adding 24 hours (daylight saving). A session never runs past the midnight after its start.
+- `scripts/prayer-timetable.ts` runs with plain `node` (type stripping), so use only erasable TypeScript there: no `enum`, `namespace`, or parameter properties.
+- Shell scripts are POSIX `sh` with `set -eu`, source `scripts/firebase.sh`, must work with both BSD (macOS) and GNU/BusyBox `date`, and print errors to stderr with stdout left empty.
+- The README documents behavior in detail (save timing, overnight timers, script output). When behavior changes, update it in a separate `docs:` commit.
 
 ## Commit conventions
 
