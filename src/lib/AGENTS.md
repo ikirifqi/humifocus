@@ -27,7 +27,8 @@ App state, Firebase access, domain logic, and UI components. Imported as `#lib/<
 - A session's document id is `String(timer.startedAt)`. Close, save, and midnight rollover from any device write the same id, so duplicates collapse.
 - `sessionOf` is the only place that turns a timer into a session: clamps `end` to `[startedAt, endOfDay(startedAt)]`, drops sessions under a second. Every session write goes through it.
 - `save()` runs in a transaction and never moves a session backwards (`end` and `totalMs` only grow), never writes the timer, skips sessions this device closed (`#closed`), and does nothing offline. Keep all of that when touching it.
-- Closing a session (`#run`, `endDay`, `deleteProject`) is a `writeBatch` that writes the session and the new timer together.
+- Closing a session (`#run`, `deleteProject`) is a `writeBatch` that writes the session and the new timer together.
+- `endDay` closes an earlier day's timer in a transaction, only if the server's timer is still the one this device saw. A device opened after days away holds a stale cached timer, and clearing it blindly wipes the timer another device started today. Offline, the rollover waits.
 - Timer edits (`togglePause`, notes) are field updates on `users/{uid}`; `editNote` rewrites the whole notes list by design (transactions cannot run offline).
 - Write failures go to `fail` (console). Most actions are fire-and-forget; only `uploadTimetable` returns its promise so the dialog can show errors.
 
