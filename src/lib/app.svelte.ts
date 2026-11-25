@@ -140,6 +140,7 @@ class App {
 	#closed = new Set<string>();
 	#saving = false;
 	#saveAgain = false;
+	#ending = false;
 
 	#systemDark = new MediaQuery('(prefers-color-scheme: dark)');
 	dark = $derived(this.theme === 'system' ? this.#systemDark.current : this.theme === 'dark');
@@ -390,14 +391,41 @@ class App {
 	/**
 	 * Stop a timer left running from an earlier day, logging it up to that day's midnight, so
 	 * each day starts from zero. Its project stays chosen for `start`.
+	 *
+	 * The timer seen here may come from this device's cache, days out of date, while another
+	 * device has since started today's timer. So the close runs in a transaction against the
+	 * server's timer and happens only if it is still this one: clearing blindly would wipe
+	 * the other device's running session and notes. A transaction needs the server, so
+	 * offline the rollover waits until the connection returns.
 	 */
 	endDay() {
-		if (!this.timer || this.timer.startedAt >= startOfDay(Date.now())) return;
-		const batch = writeBatch(db);
-		this.#closeSession(batch, Date.now());
-		batch.set(this.#userDoc(), { timer: null }, { mergeFields: ['timer'] });
-		this.selected = this.timer.projectId;
-		batch.commit().catch(fail);
+		const timer = this.timer;
+		if (!timer || timer.startedAt >= startOfDay(Date.now())) return;
+		if (this.#ending || !navigator.onLine) return;
+		this.#ending = true;
+		this.#endDay(timer)
+			.then((closed) => {
+				if (closed && (!this.timer || this.timer.startedAt === timer.startedAt)) {
+					this.selected = timer.projectId;
+				}
+			})
+			.catch(fail)
+			.finally(() => (this.#ending = false));
+	}
+
+	async #endDay(seen: Timer) {
+		await waitForPendingWrites(db);
+		const user = this.#userDoc();
+		return runTransaction(db, async (tx) => {
+			const timer = ((await tx.get(user)).data() as UserDoc | undefined)?.timer;
+			// Already closed, or replaced by a timer started since, on this device or another.
+			if (!timer || timer.startedAt !== seen.startedAt) return false;
+			const session = sessionOf(timer, Date.now());
+			// Keyed by the start, so devices that all close the same timer at midnight write one.
+			if (session) tx.set(doc(user, 'sessions', String(session.start)), session);
+			tx.set(user, { timer: null }, { mergeFields: ['timer'] });
+			return true;
+		});
 	}
 
 	addNote(text: string) {
