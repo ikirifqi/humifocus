@@ -2,8 +2,6 @@ import { browser } from '$app/env';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import {
 	addDoc,
-	arrayRemove,
-	arrayUnion,
 	collection,
 	doc,
 	documentId,
@@ -17,7 +15,8 @@ import {
 	waitForPendingWrites,
 	where,
 	writeBatch,
-	type WriteBatch
+	type DocumentReference,
+	type Transaction
 } from 'firebase/firestore';
 import { MediaQuery } from 'svelte/reactivity';
 import { auth, db } from '#lib/firebase.js';
@@ -74,6 +73,9 @@ interface Timer {
 	paused: boolean;
 	notes: Note[];
 }
+
+/** A change to the timer, given the server's timer, to run inside a transaction. */
+type TimerAction = (tx: Transaction, timer: Timer | null, user: DocumentReference) => void;
 
 type Theme = 'system' | 'light' | 'dark';
 
@@ -134,13 +136,15 @@ class App {
 	timetableCities = $state.raw<string[]>([]);
 	/** Ticks every 250ms while the timer runs, and every 15s otherwise. */
 	now = $state(Date.now());
+	online = $state(browser ? navigator.onLine : true);
+	/** True from a timer action until the server takes it, so the next one waits its turn. */
+	busy = $state(false);
 
 	#unlisten: (() => void) | null = null;
-	/** Ids of the sessions this device closed, which a save still under way must leave alone. */
-	#closed = new Set<string>();
+	/** Start of the earlier day's timer `endDay` last tried, so it is not retried on every tick. */
+	#ended: number | null = null;
 	#saving = false;
 	#saveAgain = false;
-	#ending = false;
 
 	#systemDark = new MediaQuery('(prefers-color-scheme: dark)');
 	dark = $derived(this.theme === 'system' ? this.#systemDark.current : this.theme === 'dark');
@@ -191,7 +195,8 @@ class App {
 			this.city = null;
 			this.timetables = [];
 			this.timetableCities = [];
-			this.#closed.clear();
+			this.#ended = null;
+			this.busy = false;
 			this.ready = !user;
 			if (user) this.#unlisten = this.#listen(user.uid);
 		});
@@ -342,34 +347,70 @@ class App {
 		return batch.commit();
 	}
 
+	/** Whether the timer can be changed now: online, and no earlier change still on its way. */
+	get canAct() {
+		return this.online && !this.busy;
+	}
+
+	/**
+	 * Run a change to the timer in a transaction against the server's timer, the only copy every
+	 * device agrees on. The screen may still show a timer another device has since paused,
+	 * switched, or stopped, so the change runs only while the server's timer is still the one
+	 * shown (`seen`, by its start); otherwise nothing is written and the screen catches up.
+	 *
+	 * A transaction needs the server, so offline the timer cannot change, and one change runs at
+	 * a time. Resolves to whether the change ran, or `null` when it failed.
+	 */
+	async #act(seen: Timer | null | undefined, change: TimerAction) {
+		if (!this.canAct || !this.user) return false;
+		this.busy = true;
+		const user = this.#userDoc();
+		try {
+			const ran = await runTransaction(db, async (tx) => {
+				const timer = ((await tx.get(user)).data() as UserDoc | undefined)?.timer ?? null;
+				if (seen !== undefined && timer?.startedAt !== seen?.startedAt) return false;
+				change(tx, timer, user);
+				return true;
+			});
+			if (ran) this.save();
+			return ran;
+		} catch (err) {
+			fail(err);
+			return null;
+		} finally {
+			this.busy = false;
+		}
+	}
+
 	/** Switch the running timer to a project. With no timer, only choose it for `start`. */
 	pick(projectId: string) {
 		if (!this.timer) this.selected = projectId;
-		else if (this.timer.projectId !== projectId) this.#run(projectId);
+		else if (this.timer.projectId !== projectId) this.#run(this.timer, projectId);
 	}
 
 	/** Start the timer on the chosen project. */
 	start() {
 		if (this.timer || !this.selected) return;
-		this.#run(this.selected);
+		this.#run(null, this.selected);
 	}
 
 	/** Time a project from now, closing the previous session. */
-	#run(projectId: string) {
-		const now = Date.now();
-		const batch = writeBatch(db);
-		this.#closeSession(batch, now);
-		const timer: Timer = {
-			projectId,
-			startedAt: now,
-			resumedAt: now,
-			acc: 0,
-			paused: false,
-			notes: []
-		};
-		batch.set(this.#userDoc(), { timer }, { mergeFields: ['timer'] });
-		batch.commit().catch(fail);
-		this.now = now;
+	async #run(seen: Timer | null, projectId: string) {
+		const ran = await this.#act(seen, (tx, timer, user) => {
+			const now = Date.now();
+			if (timer) closeSession(tx, user, timer, now);
+			const next: Timer = {
+				projectId,
+				startedAt: now,
+				resumedAt: now,
+				acc: 0,
+				paused: false,
+				notes: []
+			};
+			tx.set(user, { timer: next }, { mergeFields: ['timer'] });
+		});
+		if (!ran) return;
+		this.now = Date.now();
 		// Save the new session once it counts, rather than at the next minute, so it is in the
 		// history even if the tab is closed right away.
 		setTimeout(() => this.save(), 1500);
@@ -377,15 +418,18 @@ class App {
 
 	togglePause() {
 		if (!this.timer) return;
-		const now = Date.now();
-		const { paused, acc, resumedAt } = this.timer;
-		updateDoc(
-			this.#userDoc(),
-			paused
-				? { 'timer.paused': false, 'timer.resumedAt': now }
-				: { 'timer.paused': true, 'timer.acc': acc + Math.max(0, now - resumedAt) }
-		).catch(fail);
-		this.now = now;
+		const pause = !this.timer.paused;
+		this.#act(this.timer, (tx, timer, user) => {
+			// Already as asked, such as paused on another device too.
+			if (!timer || timer.paused === pause) return;
+			const now = Date.now();
+			tx.update(
+				user,
+				pause
+					? { 'timer.paused': true, 'timer.acc': timer.acc + Math.max(0, now - timer.resumedAt) }
+					: { 'timer.paused': false, 'timer.resumedAt': now }
+			);
+		}).then(() => (this.now = Date.now()));
 	}
 
 	/**
@@ -393,63 +437,50 @@ class App {
 	 * each day starts from zero. Its project stays chosen for `start`.
 	 *
 	 * The timer seen here may come from this device's cache, days out of date, while another
-	 * device has since started today's timer. So the close runs in a transaction against the
-	 * server's timer and happens only if it is still this one: clearing blindly would wipe
-	 * the other device's running session and notes. A transaction needs the server, so
-	 * offline the rollover waits until the connection returns.
+	 * device has since started today's timer. Like every timer change it runs only while the
+	 * server's timer is still this one, so it cannot wipe the other device's running session.
+	 * Offline the rollover waits until the connection returns.
 	 */
-	endDay() {
-		const timer = this.timer;
-		if (!timer || timer.startedAt >= startOfDay(Date.now())) return;
-		if (this.#ending || !navigator.onLine) return;
-		this.#ending = true;
-		this.#endDay(timer)
-			.then((closed) => {
-				if (closed && (!this.timer || this.timer.startedAt === timer.startedAt)) {
-					this.selected = timer.projectId;
-				}
-			})
-			.catch(fail)
-			.finally(() => (this.#ending = false));
-	}
-
-	async #endDay(seen: Timer) {
-		await waitForPendingWrites(db);
-		const user = this.#userDoc();
-		return runTransaction(db, async (tx) => {
-			const timer = ((await tx.get(user)).data() as UserDoc | undefined)?.timer;
-			// Already closed, or replaced by a timer started since, on this device or another.
-			if (!timer || timer.startedAt !== seen.startedAt) return false;
-			const session = sessionOf(timer, Date.now());
-			// Keyed by the start, so devices that all close the same timer at midnight write one.
-			if (session) tx.set(doc(user, 'sessions', String(session.start)), session);
+	async endDay() {
+		const seen = this.timer;
+		if (!seen || seen.startedAt >= startOfDay(Date.now())) return;
+		if (!this.canAct || this.#ended === seen.startedAt) return;
+		this.#ended = seen.startedAt;
+		const closed = await this.#act(seen, (tx, timer, user) => {
+			if (timer) closeSession(tx, user, timer, Date.now());
 			tx.set(user, { timer: null }, { mergeFields: ['timer'] });
-			return true;
 		});
+		if (closed === null) setTimeout(() => (this.#ended = null), 60000);
+		if (closed && (!this.timer || this.timer.startedAt === seen.startedAt)) {
+			this.selected = seen.projectId;
+		}
 	}
 
 	addNote(text: string) {
 		if (!this.timer) return;
-		updateDoc(this.#userDoc(), {
-			'timer.notes': arrayUnion({ at: Date.now(), text })
-		}).catch(fail);
+		const note = { at: Date.now(), text };
+		this.#act(this.timer, (tx, timer, user) => {
+			if (timer) tx.update(user, { 'timer.notes': [...timer.notes, note] });
+		});
 	}
 
-	/**
-	 * Reword a note on the running timer, keeping when it was written. This writes the whole list
-	 * to keep its order, so a note another device added unseen is lost. A transaction would prevent
-	 * that but cannot run offline.
-	 */
+	/** Reword a note on the running timer, keeping when it was written and its place. */
 	editNote(at: number, text: string) {
 		if (!this.timer) return;
-		updateDoc(this.#userDoc(), {
-			'timer.notes': this.timer.notes.map((n) => (n.at === at ? { at, text } : n))
-		}).catch(fail);
+		this.#act(this.timer, (tx, timer, user) => {
+			if (!timer) return;
+			const notes = timer.notes.map((n) => (n.at === at ? { at, text } : n));
+			tx.update(user, { 'timer.notes': notes });
+		});
 	}
 
 	removeNote(note: Note) {
 		if (!this.timer) return;
-		updateDoc(this.#userDoc(), { 'timer.notes': arrayRemove(note) }).catch(fail);
+		this.#act(this.timer, (tx, timer, user) => {
+			if (!timer) return;
+			const notes = timer.notes.filter((n) => n.at !== note.at || n.text !== note.text);
+			tx.update(user, { 'timer.notes': notes });
+		});
 	}
 
 	saveProject({ id, name, color }: { id: string | null; name: string; color: string }) {
@@ -463,26 +494,16 @@ class App {
 
 	/**
 	 * Remove a project. Its logged sessions stay in the history, and a running timer on it stops
-	 * and joins them, as the running session is already saved while it runs.
+	 * and joins them. The server's timer decides, whichever timer this device shows, so a timer
+	 * started on the project from another device is stopped too.
 	 */
 	deleteProject(id: string) {
-		const batch = writeBatch(db);
-		batch.delete(doc(this.#userDoc(), 'projects', id));
-		if (this.timer?.projectId === id) {
-			this.#closeSession(batch, Date.now());
-			batch.set(this.#userDoc(), { timer: null }, { mergeFields: ['timer'] });
-		}
-		batch.commit().catch(fail);
-	}
-
-	/** Add the running timer, if any, to the history as a finished session. */
-	#closeSession(batch: WriteBatch, now: number) {
-		if (!this.timer) return;
-		this.#closed.add(String(this.timer.startedAt));
-		const session = sessionOf(this.timer, now);
-		if (!session) return;
-		// Keyed by the start, so devices that all close the same timer at midnight write one session.
-		batch.set(doc(this.#userDoc(), 'sessions', String(session.start)), session);
+		this.#act(undefined, (tx, timer, user) => {
+			tx.delete(doc(user, 'projects', id));
+			if (timer?.projectId !== id) return;
+			closeSession(tx, user, timer, Date.now());
+			tx.set(user, { timer: null }, { mergeFields: ['timer'] });
+		});
 	}
 
 	/**
@@ -526,8 +547,7 @@ class App {
 			const ref = doc(user, 'sessions', id);
 			const stored = (await tx.get(ref)).data() as Omit<Session, 'id'> | undefined;
 			const session = sessionOf(timer, Date.now());
-			// A close on this device may still be on its way to the server.
-			if (!session || this.#closed.has(id)) return;
+			if (!session) return;
 			if (stored && (stored.end > session.end || stored.totalMs > session.totalMs)) return;
 			tx.set(ref, session);
 		});
@@ -548,6 +568,12 @@ function sessionOf(timer: Timer, now: number) {
 	const totalMs = Math.min(acc + (paused ? 0 : Math.max(0, end - resumedAt)), end - startedAt);
 	if (totalMs < 1000) return null;
 	return { start: startedAt, end, totalMs, projectId, notes };
+}
+
+/** Add a timer to the history as a finished session, keyed by its start as its saves are. */
+function closeSession(tx: Transaction, user: DocumentReference, timer: Timer, now: number) {
+	const session = sessionOf(timer, now);
+	if (session) tx.set(doc(user, 'sessions', String(session.start)), session);
 }
 
 export const app = new App();
@@ -591,5 +617,9 @@ if (browser) {
 	}
 	atMidnight();
 	addEventListener('pagehide', () => app.save());
-	addEventListener('online', () => app.save());
+	addEventListener('online', () => {
+		app.online = true;
+		app.save();
+	});
+	addEventListener('offline', () => (app.online = false));
 }
