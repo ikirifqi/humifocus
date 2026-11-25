@@ -129,6 +129,11 @@ textarea::placeholder {
 	text-decoration: none;
 }
 
+.btn:disabled {
+	opacity: 0.4;
+	cursor: default;
+}
+
 .btn-primary {
 	border: none;
 	background: var(--fg);

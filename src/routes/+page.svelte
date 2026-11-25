@@ -169,14 +169,23 @@
 	<footer>
 		{#if app.timer}
 			<div class="actions">
-				<button class="btn btn-primary lead" onclick={() => app.togglePause()}>
+				<button
+					class="btn btn-primary lead"
+					disabled={!app.canAct}
+					onclick={() => app.togglePause()}
+				>
 					{app.timer.paused ? 'Resume' : 'Pause'}
 				</button>
 				<AddNote />
 				<SessionNotes />
 			</div>
 		{:else if app.current}
-			<button class="btn btn-primary lead" onclick={() => app.start()}>Start</button>
+			<button class="btn btn-primary lead" disabled={!app.canAct} onclick={() => app.start()}
+				>Start</button
+			>
+		{/if}
+		{#if !app.online}
+			<p class="offline">Offline. The timer can change again once you are back online.</p>
 		{/if}
 	</footer>
 </div>
@@ -326,6 +335,13 @@
 		flex-wrap: wrap;
 		justify-content: center;
 		gap: 10px;
+	}
+
+	.offline {
+		margin: 0;
+		font-size: 12px;
+		color: var(--fg3);
+		text-align: center;
 	}
 
 	.lead {

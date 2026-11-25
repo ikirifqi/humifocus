@@ -19,7 +19,7 @@
 		ev.preventDefault();
 		if (!editing) return;
 		const text = editing.text.trim();
-		if (!text) return;
+		if (!text || !app.canAct) return;
 		app.editNote(editing.at, text);
 		editing = null;
 	}
@@ -58,7 +58,9 @@
 											class="btn btn-ghost small"
 											onclick={() => (editing = null)}>Cancel</button
 										>
-										<button type="submit" class="btn btn-primary small">Save</button>
+										<button type="submit" class="btn btn-primary small" disabled={!app.canAct}
+											>Save</button
+										>
 									</div>
 								</form>
 							{:else if deleting === n.at}
@@ -71,6 +73,7 @@
 										>
 										<button
 											class="btn small danger"
+											disabled={!app.canAct}
 											onclick={() => {
 												app.removeNote(n);
 												deleting = null;

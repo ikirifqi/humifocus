@@ -116,6 +116,7 @@
 						<button class="btn btn-ghost small" onclick={() => (deleting = null)}>Keep</button>
 						<button
 							class="btn small danger"
+							disabled={!app.canAct}
 							onclick={() => {
 								app.deleteProject(p.id);
 								deleting = null;

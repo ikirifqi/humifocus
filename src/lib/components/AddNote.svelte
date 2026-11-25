@@ -13,7 +13,7 @@
 	function save(ev: SubmitEvent) {
 		ev.preventDefault();
 		const text = draft.trim();
-		if (!text) return;
+		if (!text || !app.canAct) return;
 		app.addNote(text);
 		draft = '';
 	}
@@ -37,7 +37,7 @@
 				<span class="hint">Enter to add another</span>
 				<div class="actions">
 					<button type="button" class="btn btn-ghost small" onclick={toggle}>Done</button>
-					<button type="submit" class="btn btn-primary small">Add</button>
+					<button type="submit" class="btn btn-primary small" disabled={!app.canAct}>Add</button>
 				</div>
 			</div>
 		</form>
