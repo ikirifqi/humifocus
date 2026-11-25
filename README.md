@@ -18,7 +18,7 @@ A simple focus timer for people who constantly switch context. Pick what you are
 - **Projects** with colors and the time logged on each.
 - **Analytics** over 7, 30, or 90 days: total focus, daily average, time per project, a day-by-day history with notes, and CSV or JSON export of the chosen range and project.
 - **Prayer timetable** for the next prayer and the whole month, with regional calculation methods for Jakarta, Kuala Lumpur, Dubai, Cairo, Istanbul, London, and New York. Upload a year of official times for any city as CSV, and every user can pick it.
-- **Synced and offline-ready.** Your data follows your account across devices, and keeps working without a connection.
+- **Synced across devices.** Your data follows your account, and the app opens and shows your day without a connection. Starting, switching, pausing, and notes need a connection, so a device that has not caught up cannot undo what another did.
 - **Light and dark themes.**
 
 ## Screenshots
@@ -85,7 +85,7 @@ Uploaded prayer timetables are shared by every signed-in user. Each signed-in ap
 | `prayerTimetables/{city}_{year}` | A year of prayer times for a city, its UTC offset, and who uploaded it and when |
 | `prayerCities/{city}`            | The name of each city with an upload, for the location menu                     |
 
-The app state in `src/lib/app.svelte.ts` mirrors live Firestore snapshots, and Firestore's local cache applies writes immediately, so the app stays responsive offline and catches up when the connection returns.
+The app state in `src/lib/app.svelte.ts` mirrors live Firestore snapshots, and Firestore's local cache lets the app open and show your data offline. Changes to the running timer run as transactions against the server's timer and apply only if it is still the one the device shows, so a device that is behind, such as a phone resuming from the background, never overwrites what another device did. They need a connection, and the timer controls are disabled while offline.
 
 ## Prayer timetable uploads
 

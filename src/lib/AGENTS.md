@@ -26,10 +26,9 @@ App state, Firebase access, domain logic, and UI components. Imported as `#lib/<
 
 - A session's document id is `String(timer.startedAt)`. Close, save, and midnight rollover from any device write the same id, so duplicates collapse.
 - `sessionOf` is the only place that turns a timer into a session: clamps `end` to `[startedAt, endOfDay(startedAt)]`, drops sessions under a second. Every session write goes through it.
-- `save()` runs in a transaction and never moves a session backwards (`end` and `totalMs` only grow), never writes the timer, skips sessions this device closed (`#closed`), and does nothing offline. Keep all of that when touching it.
-- Closing a session (`#run`, `deleteProject`) is a `writeBatch` that writes the session and the new timer together.
-- `endDay` closes an earlier day's timer in a transaction, only if the server's timer is still the one this device saw. A device opened after days away holds a stale cached timer, and clearing it blindly wipes the timer another device started today. Offline, the rollover waits.
-- Timer edits (`togglePause`, notes) are field updates on `users/{uid}`; `editNote` rewrites the whole notes list by design (transactions cannot run offline).
+- `save()` runs in a transaction and never moves a session backwards (`end` and `totalMs` only grow), never writes the timer, and does nothing offline. Keep all of that when touching it.
+- Every timer change (`start`, `pick`, `togglePause`, notes, `endDay`, `deleteProject`) goes through `#act`: a transaction that reads the server's timer and writes only if it is still the one this device shows (matched by `startedAt`). The screen can lag another device, such as a PWA resuming or a device opened after days away; a blind write would close the wrong session or wipe the other device's timer. Closing a session writes it and the new timer in the same transaction (`closeSession`).
+- Timer changes need the server: offline, or while one is in flight, `canAct` is false and the UI disables the controls. Never reintroduce plain `updateDoc` / `writeBatch` writes to the timer.
 - Write failures go to `fail` (console). Most actions are fire-and-forget; only `uploadTimetable` returns its promise so the dialog can show errors.
 
 ## Components
